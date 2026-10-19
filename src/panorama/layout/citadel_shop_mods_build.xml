@@ -1,0 +1,82 @@
+<root>
+	<styles>
+		<include src="s2r://panorama/styles/citadel_base_styles.vcss" />
+		<include src="s2r://panorama/styles/citadel_shop_mods_list.vcss" />
+		<include src="s2r://panorama/styles/citadel_shop_mods_build.vcss" />
+		<include src="s2r://panorama/styles/easy_build_editor.vcss" />
+	</styles>
+	<scripts>
+		<include src="s2r://panorama/scripts/easy_build_editor.vts" />
+	</scripts>
+	<snippets>
+		<snippet name="FavoriteBuildEntry">
+			<Panel class="FavoriteBuildEntryContainer">
+				<Label class="FavoriteBuildEntryLabel SelectedBuildName" text="#Citadel_HeroBuilds_BuildName" html="true" />
+				<Panel class="TagList">
+					<CitadelBuildTag class="BuildTag Small" id="BuildTag1" />
+					<CitadelBuildTag class="BuildTag Small" id="BuildTag2" />
+					<CitadelBuildTag class="BuildTag Small" id="BuildTag3" />
+				</Panel>
+			</Panel>
+		</snippet>
+	</snippets>
+	<CitadelShopModsBuild class="shopModsBuild" hittest="true">
+		<Panel class="BuildBG" hittest="false" />
+		<Panel id="CategoryContainer" />
+		<Panel class="BuildHeader BuildHeaderShared">
+			<Panel class="BuildHeaderContainer" onactivate="CitadelHudHeroBuildsToggleFavoriteSelector();">
+				<Panel id="SelectedBuildOuter" />
+			</Panel>
+			<Panel id="ControlButtons">
+				<CitadelButton id="EasyEditorButton" class="Medium Fill visibleByDefault EditModeButton" text="Easy Editor" onmouseactivate="EasyBuildEditor.Toggle()" />
+				<Panel class="BuildDetails InfoIcon" onmouseover="UIShowCustomLayoutTooltip( BuildDetailsTooltip, file://{resources}/layout/tooltips/citadel_tooltip_build_details.xml )" onmouseout="UIHideCustomLayoutTooltip( BuildDetailsTooltip )" />
+				<CitadelButton id="PasteFromClipboardButton" class="HasImage Medium Fill Dark" imagesrc="s2r://panorama/images/icons/icon_copy_paste.vsvg" onmouseover="UIShowTextTooltip( #Citadel_HeroBuilds_PasteFromClipboard )" onmouseout="UIHideTextTooltip()" onmouseactivate="CitadelHudHeroBuildsPasteBuildFromClipboard();" />
+				<CitadelButton id="CopyToClipboardButton" class="HasImage Medium Fill Dark" imagesrc="s2r://panorama/images/icons/icon_copy_plus.vsvg" onmouseover="UIShowTextTooltip( #Citadel_HeroBuilds_CopyToClipboard )" onmouseout="UIHideTextTooltip()" onmouseactivate="CitadelCopySelectedBuildContentsToClipboard(0);" />
+				<CitadelButton id="EditHeroBuildButton" class="Medium Fill Dark visibleByDefault EditModeButton" text="#Citadel_HeroBuilds_EditBuildLabel" onmouseover="UIShowTextTooltip( #Citadel_HeroBuilds_EditBuild )" onmouseout="UIHideTextTooltip()" onmouseactivate="CitadelHudHeroBuildsEditSelectedBuild()" />
+				<CitadelButton id="AddToQueueButton" class="HasImage Medium Fill Dark" text="#Citadel_HeroBuilds_AddToQueue" imagesrc="s2r://panorama/images/icons/icon_quickbuy_queue.vsvg" onmouseover="UIShowTextTooltip( #Citadel_HeroBuilds_QueueFullBuild )" onmouseout="UIHideTextTooltip()" onmouseactivate="CitadelHudHeroBuildsQuickbuyQueueFullBuild();" />
+				<CitadelButton id="BrowseBuildsButton" class="BuildHeaderButton Medium Dark Fill" text="#Citadel_HeroBuilds_BrowseBuilds" />
+				<CitadelButton class="Medium Dark Fill visibleByDefault EditModeButton" text="#Citadel_HeroBuilds_CompactAll" onmouseover="UIShowTextTooltip( #Citadel_HeroBuilds_CompactAllTooltip )" onmouseout="UIHideTextTooltip()" onmouseactivate="CitadelHudHeroBuildsCompactCategory( -1 )" />
+				<CitadelButton class="AddCategoryButton Medium Dark Fill visibleByDefault EditModeButton" text="#Citadel_HeroBuilds_AddCategory" onmouseactivate="CitadelHudHeroBuildsAddNewCategory()" />
+			</Panel>
+		</Panel>
+		<Panel id="FavoriteBuildList" />
+		<Panel class="ClipboardToast TertiaryButton">
+			<Label class="CopyLabel" text="#Citadel_HeroBuilds_CopyToClipboardToast" />
+			<Label class="PasteLabel" text="#Citadel_HeroBuilds_PasteFromClipboardToast" />
+		</Panel>
+		<Panel id="EasyToolbar" hittest="true">
+			<Panel id="EasySelectedCard">
+				<Label class="EasyCardCaption" text="ADDING TO" />
+				<Label id="EasySelectedName" text="No section selected" />
+				<Label id="EasySelectedMeta" text="Click a section below" />
+			</Panel>
+			<Panel class="EasyRow">
+				<Label class="EasyRowLabel" text="Shop" />
+				<Button class="EasyChip Weapon" onmouseactivate="CitadelSelectShopTab( EShopTab_Weapon )"><Label text="Weapon" /></Button>
+				<Button class="EasyChip Spirit" onmouseactivate="CitadelSelectShopTab( EShopTab_Spirit )"><Label text="Spirit" /></Button>
+				<Button class="EasyChip Vitality" onmouseactivate="CitadelSelectShopTab( EShopTab_Vitality )"><Label text="Vitality" /></Button>
+				<Button class="EasyChip" onmouseactivate="CitadelSelectShopTab( EShopTab_AllItems )"><Label text="All" /></Button>
+			</Panel>
+			<Panel class="EasyRow">
+				<Label class="EasyRowLabel" text="Add" />
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddSection( 'Early Game' )"><Label text="Early" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddSection( 'Mid Game' )"><Label text="Mid" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddSection( 'Late Game' )"><Label text="Late" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddSection( 'Situational' )"><Label text="Situational" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddSection( '' )"><Label text="Blank" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.AddStarterTemplate()"><Label text="Starter set" /></Button>
+			</Panel>
+			<Panel class="EasyRow">
+				<Label class="EasyRowLabel" text="Tidy" />
+				<Button class="EasyChip" onmouseactivate="CitadelHudHeroBuildsCompactCategory( -1 )"><Label text="Compact all" /></Button>
+				<Button class="EasyChip" onactivate="EasyBuildEditor.ToggleSplit()"><Label id="EasySplitLabel" text="Hide shop" /></Button>
+			</Panel>
+			<Label class="EasyHint" text="Pick a section, then click items on the left to add or remove them. Rename a section in the Edit Category box." />
+		</Panel>
+		<Panel id="EasyFooter" hittest="true">
+			<Button class="EasyFooterButton Save" onmouseactivate="CitadelHudHeroBuildsSaveEdits()"><Label text="SAVE BUILD" /></Button>
+			<Button class="EasyFooterButton Cancel" onmouseactivate="CitadelHudHeroBuildsDiscardEdits()"><Label text="CANCEL" /></Button>
+			<Label id="EasyStatus" text="" />
+		</Panel>
+	</CitadelShopModsBuild>
+</root>

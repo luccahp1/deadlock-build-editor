@@ -1,0 +1,17 @@
+# game files and third-party tools, never commit
+_ref/
+_all/
+_dec/
+_dec_all/
+_ext/
+_test/
+tools/s2v/
+tools/*.zip
+tools/bin/
+tools/pancomp/bin/
+tools/pancomp/obj/
+build/
+
+# local assistant files
+CLAUDE.md
+.claude/

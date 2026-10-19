@@ -1,0 +1,217 @@
+/* Easy Build Editor. Only applies while the build panel has .EasyEdit, which the
+   script sets when the Easy Editor button is pressed in edit mode. */
+
+#EasyEditorButton
+{
+	background-color: #e0a63a;
+	color: #1b1b1b;
+	margin-right: 8px;
+}
+
+#EasyEditorButton:hover
+{
+	brightness: 1.2;
+}
+
+CitadelShopModsBuild.EasyEdit #EasyEditorButton
+{
+	background-color: #3fb37f;
+}
+
+#EasyToolbar
+{
+	visibility: collapse;
+	width: 100%;
+	margin-top: 50px;
+	padding: 8px 14px;
+	flow-children: down;
+	background-color: #0d1d36e6;
+	border-bottom: 1px solid #ffffff22;
+	z-index: 10;
+}
+
+.gEditingBuilds CitadelShopModsBuild.EasyEdit #EasyToolbar
+{
+	visibility: visible;
+}
+
+.gEditingBuilds CitadelShopModsBuild.EasyEdit #CategoryContainer
+{
+	margin-top: 262px;
+	margin-bottom: 64px;
+	padding-top: 6px;
+	flow-children: down;
+}
+
+.EasyRow
+{
+	width: 100%;
+	flow-children: right;
+	margin-bottom: 6px;
+}
+
+.EasyRowLabel
+{
+	width: 92px;
+	vertical-align: center;
+	font-size: 13px;
+	font-weight: bold;
+	letter-spacing: 1px;
+	color: #ffffff88;
+	text-transform: uppercase;
+}
+
+#EasySelectedCard
+{
+	width: 100%;
+	flow-children: right;
+	padding: 8px 10px;
+	margin-bottom: 8px;
+	border-radius: 4px;
+	background-color: #ffffff10;
+	border: 1px solid #ffffff20;
+}
+
+#EasySelectedCard.HasSelection
+{
+	background-color: #3fb37f30;
+	border: 1px solid #3fb37f;
+}
+
+.EasyCardCaption
+{
+	vertical-align: center;
+	font-size: 13px;
+	font-weight: bold;
+	letter-spacing: 1px;
+	color: #ffffff88;
+	margin-right: 10px;
+}
+
+#EasySelectedName
+{
+	vertical-align: center;
+	font-size: 20px;
+	font-weight: bold;
+	color: #ffffff;
+}
+
+#EasySelectedMeta
+{
+	vertical-align: center;
+	horizontal-align: right;
+	font-size: 14px;
+	color: #ffffffaa;
+}
+
+.EasyChip
+{
+	padding: 5px 12px;
+	margin-right: 6px;
+	border-radius: 4px;
+	background-color: #ffffff18;
+	border: 1px solid #ffffff28;
+}
+
+.EasyChip Label
+{
+	font-size: 15px;
+	font-weight: bold;
+	color: #ffffffdd;
+}
+
+.EasyChip:hover
+{
+	background-color: #ffffff30;
+}
+
+.EasyChip.Weapon:hover
+{
+	background-color: #d4882c80;
+}
+
+.EasyChip.Spirit:hover
+{
+	background-color: #9b59d080;
+}
+
+.EasyChip.Vitality:hover
+{
+	background-color: #6fb03380;
+}
+
+.EasyHint
+{
+	width: 100%;
+	font-size: 13px;
+	color: #ffffff80;
+	margin-top: 2px;
+}
+
+#EasyFooter
+{
+	visibility: collapse;
+	width: 100%;
+	height: 56px;
+	vertical-align: bottom;
+	flow-children: right;
+	padding: 8px 14px;
+	background-color: #0d1d36f2;
+	border-top: 1px solid #ffffff22;
+	z-index: 10;
+}
+
+.gEditingBuilds CitadelShopModsBuild.EasyEdit #EasyFooter
+{
+	visibility: visible;
+}
+
+.EasyFooterButton
+{
+	height: 40px;
+	padding: 0px 22px;
+	margin-right: 10px;
+	border-radius: 4px;
+}
+
+.EasyFooterButton Label
+{
+	vertical-align: center;
+	font-size: 17px;
+	font-weight: bold;
+	letter-spacing: 1px;
+}
+
+.EasyFooterButton.Save
+{
+	background-color: #3fb37f;
+}
+
+.EasyFooterButton.Save Label
+{
+	color: #0b1a12;
+}
+
+.EasyFooterButton.Cancel
+{
+	background-color: #ffffff14;
+	border: 1px solid #d9534f;
+}
+
+.EasyFooterButton.Cancel Label
+{
+	color: #f2b8b6;
+}
+
+.EasyFooterButton:hover
+{
+	brightness: 1.2;
+}
+
+#EasyStatus
+{
+	vertical-align: center;
+	horizontal-align: right;
+	font-size: 13px;
+	color: #ffffff88;
+}
