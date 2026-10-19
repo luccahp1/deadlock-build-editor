@@ -2,9 +2,16 @@
 
 ## State (2026-10-19)
 
-V1 is built (`dist/pak42_dir.vpk`) but **not yet tested in-game**. Every compiled file
-decompiles cleanly with Source2Viewer and the layout compiler round-trips Valve's own
-`citadel_shop_mods_build` to an identical AST, but the engine loading our files is unverified.
+V1 runs in-game (tested on 1920x1080). Verified: mod loads, Easy Editor button sits left of
+the info icon in edit mode, Easy mode lays out edit sidebar (80%) | full shop (all four tiers,
+~74% scale) | build (85%) across the whole screen, "Adding to" banner tracks the focused
+section, toolbar shop tabs work, header buttons decluttered. Items are added the vanilla way,
+by dragging from the shop onto a section (one drag confirmed landing; z-order fix applied after).
+
+Testing loop: build, copy `dist/pak42_dir.vpk` into `game/citadel/addons`, restart the game
+(mods load at startup only). Launch with `steam.exe -applaunch 1422450 -condebug -dev` so
+`game/citadel/console.log` is written live; the script logs `[EasyBuildEditor] layout: ...`
+with measured sizes when Easy mode turns on.
 
 ## What is known
 
@@ -22,13 +29,15 @@ decompiles cleanly with Source2Viewer and the layout compiler round-trips Valve'
 - Compiled formats: vts_c DATA = plain JS. vcss_c DATA = crc32 + u16 image count + CSS text.
   vxml_c = DATA (crc + images) + LaCo (binary KV3 AST, see `pancomp`).
 
-## Unverified, check first when testing
+## Known issues / unverified
 
-1. Does the engine load our vxml_c/vcss_c/vts_c? (Button visible in edit mode = yes.)
-2. Do inline-style overrides keep the shop and build both visible after tab switches?
-3. Does setting `CategoryNameTextEntry.text` from JS rename the new section?
-4. Does `$.DispatchEvent("CitadelHudHeroBuildsAddNewCategory", panel)` work from JS?
-5. Read `[EasyBuildEditor]` lines in `game/citadel/console.log` for the panel tree dump.
+- After a restart the shop half is blank until a shop tab (Weapon/Spirit/Vitality) is picked.
+  Should auto-select Weapon on entering Easy mode.
+- Quick-add sections (Early/Mid/Late/...) and renaming via `CategoryNameTextEntry` untested.
+- Drag-drop after the z-index change confirmed only by a synthetic drag that did not land;
+  needs a real mouse test.
+- `ui-scale` scales a panel's own px width too: give widths in the panel's scaled units.
+- Only tested at 1920x1080; layout reads the root width so other 16:9 sizes should follow.
 
 ## Next ideas (V1.1)
 

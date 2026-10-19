@@ -10,8 +10,14 @@ var EasyBuildEditor = (function () {
     const LOG_PREFIX = "[EasyBuildEditor] ";
     const TICK_EDITING = 0.2;
     const TICK_IDLE = 0.5;
-    const BUILD_WIDTH = "46%";
-    const SHOP_WIDTH = "54%";
+    // Full-screen layout: edit sidebar | shop | build.
+    const SIDEBAR_SCALE = 0.8;
+    const SIDEBAR_WIDTH = 520; // CitadelHudHeroBuilds width in the game's CSS
+    const SIDEBAR_LEFT = 20;
+    const GAP = 16;
+    const SHOP_NATIVE_WIDTH = 1110; // shop list width inside the game's 1200px MainPanel
+    const SHOP_SHARE = 0.6;
+    const BUILD_SCALE = 0.85;
     const STARTER_SECTIONS = ["Early Game", "Mid Game", "Late Game", "Situational"];
 
     const buildPanel = $.GetContextPanel();
@@ -89,39 +95,131 @@ var EasyBuildEditor = (function () {
         }
     }
 
-    // ---- split view: shop items on the left, build on the right ----
+    // ---- full-screen layout: edit sidebar | shop | build ----
 
-    function applySplit(on) {
-        const shop = shopPanel();
-        if (on) {
-            buildPanel.style.width = BUILD_WIDTH;
-            buildPanel.style.horizontalAlign = "right";
-            buildPanel.style.opacity = "1";
-            buildPanel.style.transform = "none";
-            buildPanel.visible = true;
-            if (shop) {
-                shop.style.width = SHOP_WIDTH;
-                shop.style.horizontalAlign = "left";
-                shop.style.opacity = "1";
-                shop.style.transform = "none";
-                shop.visible = true;
+    // Every inline style we set is recorded so turning Easy mode off can hand
+    // the panels back to the game's own CSS.
+    const touched = [];
+
+    function setStyle(panel, prop, value) {
+        if (!panel) {
+            return;
+        }
+        if (!touched.some(t => t.panel === panel && t.prop === prop)) {
+            touched.push({ panel: panel, prop: prop });
+        }
+        panel.style[prop] = value;
+    }
+
+    function restoreStyles() {
+        for (const t of touched) {
+            if (t.panel.IsValid && !t.panel.IsValid()) {
+                continue;
             }
-        } else {
-            for (const panel of [buildPanel, shop]) {
-                if (!panel) {
-                    continue;
-                }
-                panel.style.width = null;
-                panel.style.horizontalAlign = null;
-                panel.style.opacity = null;
-                panel.style.transform = null;
+            t.panel.style[t.prop] = null;
+        }
+        touched.length = 0;
+    }
+
+    function ancestorById(id) {
+        for (let panel = buildPanel.GetParent(); panel; panel = panel.GetParent()) {
+            if (panel.id === id) {
+                return panel;
             }
         }
-        splitApplied = on;
+        return null;
+    }
+
+    function editSidebar() {
+        const section = hudRoot().FindChildTraverse("EditBuildSection");
+        return section ? section.GetParent() : null;
+    }
+
+    function screenWidth() {
+        const root = hudRoot();
+        const scale = root.actualuiscale_x || 1;
+        return Math.round(root.actuallayoutwidth / scale) || 1920;
+    }
+
+    function logLayout(shop) {
+        if (!shop) {
+            return;
+        }
+        log(`layout: screen=${screenWidth()} shop=${shop.actuallayoutwidth}x${shop.actuallayoutheight} ` +
+            `scale=${shop.actualuiscale_x} build=${buildPanel.actuallayoutwidth} x=${buildPanel.actualxoffset}`);
+    }
+
+    function applySplit(on) {
+        if (!on) {
+            restoreStyles();
+            splitApplied = false;
+            updateSplitLabel();
+            return;
+        }
+
+        const sidebarRight = SIDEBAR_LEFT + Math.round(SIDEBAR_WIDTH * SIDEBAR_SCALE);
+        const mainWidth = screenWidth() - sidebarRight - GAP * 2;
+
+        setStyle(editSidebar(), "uiScale", `${SIDEBAR_SCALE * 100}%`);
+        setStyle(ancestorById("Shop"), "marginRight", "0px");
+        setStyle(ancestorById("Shop"), "width", "100%");
+        setStyle(ancestorById("MainPanel"), "width", `${mainWidth}px`);
+        setStyle(ancestorById("MainPanel"), "marginRight", `${GAP}px`);
+        setStyle(ancestorById("ShopModsContainer"), "marginRight", "0px");
+
+        const listsWidth = mainWidth - 90; // minus the shop's tab strip
+        const shopWidth = Math.round(listsWidth * SHOP_SHARE);
+        const shopScale = Math.min(1, shopWidth / SHOP_NATIVE_WIDTH);
+
+        // ui-scale also scales the panel's own px width, so widths are given
+        // in the panel's scaled units: native width * scale = space on screen.
+        const shop = shopPanel();
+        setStyle(shop, "width", `${SHOP_NATIVE_WIDTH}px`);
+        setStyle(shop, "uiScale", `${Math.round(shopScale * 100)}%`);
+        setStyle(shop, "horizontalAlign", "left");
+        setStyle(shop, "opacity", "1");
+        setStyle(shop, "transform", "none");
+        setStyle(shop, "overflow", "clip clip");
+        setStyle(shop, "zIndex", "0");
+        if (shop) {
+            shop.visible = true;
+        }
+
+        const buildWidth = listsWidth - shopWidth - GAP;
+        setStyle(buildPanel, "width", `${Math.floor(buildWidth / BUILD_SCALE)}px`);
+        setStyle(buildPanel, "uiScale", `${BUILD_SCALE * 100}%`);
+        setStyle(buildPanel, "horizontalAlign", "right");
+        setStyle(buildPanel, "opacity", "1");
+        setStyle(buildPanel, "transform", "none");
+        // Above the shop, so drops onto a section reach the section.
+        setStyle(buildPanel, "zIndex", "20");
+        buildPanel.visible = true;
+
+        if (!splitApplied) {
+            $.Schedule(0.5, () => logLayout(shop));
+        }
+        splitApplied = true;
+        updateSplitLabel();
+    }
+
+    function updateSplitLabel() {
         const label = find("EasySplitLabel");
         if (label) {
             label.text = splitWanted ? "Hide shop" : "Show shop";
         }
+    }
+
+    // Keep the section list starting right under the toolbar, whatever height
+    // the toolbar ends up at.
+    function placeCategories() {
+        const toolbar = find("EasyToolbar");
+        const container = find("CategoryContainer");
+        if (!toolbar || !container || toolbar.actuallayoutheight <= 0) {
+            return;
+        }
+        const scale = toolbar.actualuiscale_y || 1;
+        const bottom = Math.ceil((toolbar.actualyoffset + toolbar.actuallayoutheight) / scale);
+        setStyle(container, "marginTop", `${bottom + 6}px`);
     }
 
     // ---- per-category tidy up ----
@@ -247,6 +345,7 @@ var EasyBuildEditor = (function () {
                 // The game hides whichever tab is not selected; keep both up.
                 applySplit(true);
             }
+            placeCategories();
             refreshSelection(list);
             processPendingNames();
             setStatus(`${list.length} section${list.length === 1 ? "" : "s"}, ${totalItems(list)} items`);
@@ -316,7 +415,11 @@ var EasyBuildEditor = (function () {
         },
         ToggleSplit() {
             splitWanted = !splitWanted;
+            applySplit(false);
             applySplit(splitWanted && applied);
+            for (const category of categories()) {
+                tidyCategory(category, applied);
+            }
         },
         AddSection(name) {
             queueSection(name);
