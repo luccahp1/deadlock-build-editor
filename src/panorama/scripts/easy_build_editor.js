@@ -39,7 +39,6 @@ var EasyBuildEditor = (function () {
     let tickScheduled = false;
     let dumped = false;
     let pendingNames = [];
-    let iconLogCountdown = 5;
 
     function log(message) {
         $.Msg(LOG_PREFIX + message);
@@ -217,27 +216,53 @@ var EasyBuildEditor = (function () {
         setStyle(description, "width", "100%");
     }
 
-    function iconStats(panel) {
-        if (!panel) {
-            return "none";
-        }
-        const icons = [];
-        const walk = p => {
-            for (const c of p.Children()) {
-                if (ITEM_TYPES.includes(c.paneltype)) {
-                    icons.push(c);
-                } else {
-                    walk(c);
-                }
+    // ---- shop tab ----
+    //
+    // The game only fills in shop cards (art, tier, colours) for the tab it
+    // has selected. Easy mode shows the shop next to the build, so it selects
+    // All Items itself instead of leaving the build tab selected with an empty
+    // shop drawn over it.
+
+    let selectedAllItems = false;
+
+    function hasShopClass(name) {
+        for (let panel = buildPanel; panel; panel = panel.GetParent()) {
+            if (panel.BHasClass(name)) {
+                return true;
             }
-        };
-        walk(panel);
-        const withArt = icons.filter(i => i.BHasClass("hasAbility")).length;
-        return `${withArt}/${icons.length} hasAbility`;
+        }
+        return false;
     }
 
-    function logIcons(tag) {
-        log(`icons ${tag}: build ${iconStats(buildPanel)}, shop ${iconStats(shopPanel())}`);
+    function activate(id) {
+        const button = find(id);
+        if (button) {
+            $.DispatchEvent("Activated", button, "mouse");
+        }
+    }
+
+    function selectAllItemsTab() {
+        if (hasShopClass("showingAllItems")) {
+            return;
+        }
+        selectedAllItems = true;
+        activate("EasyTabAllItems");
+        $.Schedule(0.3, () => log(`all items tab ${hasShopClass("showingAllItems") ? "selected" : "NOT selected"}, ` +
+            `cards ${cardStats(shopPanel())}`));
+    }
+
+    function restoreBuildTab() {
+        if (selectedAllItems) {
+            selectedAllItems = false;
+            activate("EasyTabBuild");
+        }
+    }
+
+    // A card the game has filled in carries its item category class.
+    function cardStats(panel) {
+        const cards = modIcons(panel);
+        const filled = cards.filter(c => c.BHasClass("isWeapon") || c.BHasClass("isTech") || c.BHasClass("isArmor"));
+        return `${filled.length}/${cards.length} filled`;
     }
 
     function logLayout(shop) {
@@ -247,12 +272,13 @@ var EasyBuildEditor = (function () {
             log(`strip: y=${strip.actualyoffset} h=${strip.actuallayoutheight} scale=${strip.actualuiscale_y} ` +
                 `parent=${parent ? parent.paneltype + "#" + parent.id : "?"} parentH=${parent ? parent.actuallayoutheight : 0}`);
         }
-        logIcons("on layout");
         if (!shop) {
             return;
         }
+        const tiers = shop.FindChildTraverse("ModsContainer");
         log(`layout: screen=${screenSize().w}x${screenSize().h} shop=${shop.actuallayoutwidth}x${shop.actuallayoutheight} ` +
-            `scale=${shop.actualuiscale_x} build=${buildPanel.actuallayoutwidth} x=${buildPanel.actualxoffset}`);
+            `content=${tiers ? tiers.contentheight : "?"} scale=${shop.actualuiscale_x} ` +
+            `build=${buildPanel.actuallayoutwidth} x=${buildPanel.actualxoffset} cards ${cardStats(shop)}`);
     }
 
     function applySplit(on) {
@@ -290,7 +316,8 @@ var EasyBuildEditor = (function () {
         setStyle(shop, "horizontalAlign", "left");
         setStyle(shop, "opacity", "1");
         setStyle(shop, "transform", "none");
-        setStyle(shop, "overflow", "clip clip");
+        // All Items is taller than the space left above the edit strip.
+        setStyle(shop, "overflow", "clip scroll");
         setStyle(shop, "zIndex", "0");
         if (shop) {
             shop.visible = true;
@@ -663,6 +690,10 @@ var EasyBuildEditor = (function () {
         }
         for (const category of list) {
             const key = positionKey(list, category);
+            if (!positions[key] && spawnAt && list.length > spawnAt.previousCount) {
+                positions[key] = { x: spawnAt.x, y: spawnAt.y };
+                spawnAt = null;
+            }
             if (!positions[key]) {
                 positions[key] = { x: 0, y: nextY };
                 nextY += category.actuallayoutheight / unitsOf(category) + 12;
@@ -687,6 +718,268 @@ var EasyBuildEditor = (function () {
         }
     }
 
+    // ---- right-click on empty space: context menu ----
+    //
+    // Panorama gives scripts no cursor position, so the empty space behind
+    // the sections is covered by a grid of invisible cells. The cell that gets
+    // the right-click says where the menu opens.
+
+    const HIT_GRID_ID = "EasyHitGrid";
+    const MENU_ID = "EasyContextMenu";
+    const CELL = 32;
+    const MAX_RESULTS = 8;
+    let spawnAt = null;   // where the next new section goes
+    let menuAt = null;
+    let gridSize = "";
+
+    function hitGrid() {
+        const container = find("CategoryContainer");
+        if (!container) {
+            return null;
+        }
+        let grid = container.FindChild(HIT_GRID_ID);
+        if (!grid) {
+            grid = $.CreatePanel("Panel", container, HIT_GRID_ID);
+            grid.style.flowChildren = "right-wrap";
+            grid.hittest = false;
+            container.MoveChildBefore(grid, container.GetChild(0));
+            gridSize = "";
+        }
+        return grid;
+    }
+
+    function sizeHitGrid(list) {
+        const container = find("CategoryContainer");
+        const grid = hitGrid();
+        if (!container || !grid) {
+            return;
+        }
+        const scale = unitsOf(container);
+        let bottom = container.actuallayoutheight / scale;
+        for (const category of list) {
+            const pos = positions[positionKey(list, category)];
+            if (pos) {
+                bottom = Math.max(bottom, pos.y + category.actuallayoutheight / unitsOf(category) + CELL * 4);
+            }
+        }
+        const cols = Math.max(1, Math.floor(container.actuallayoutwidth / scale / CELL));
+        const rows = Math.max(1, Math.ceil(bottom / CELL));
+        const size = `${cols}x${rows}`;
+        if (size === gridSize) {
+            return;
+        }
+        gridSize = size;
+        grid.style.width = `${cols * CELL}px`;
+        grid.style.height = `${rows * CELL}px`;
+        grid.RemoveAndDeleteChildren();
+        for (let i = 0; i < cols * rows; i++) {
+            const cell = $.CreatePanel("Panel", grid, "");
+            cell.style.width = `${CELL}px`;
+            cell.style.height = `${CELL}px`;
+            cell.hittest = true;
+            const at = { x: (i % cols) * CELL + CELL / 2, y: Math.floor(i / cols) * CELL + CELL / 2 };
+            cell.SetPanelEvent("oncontextmenu", () => openMenu(at));
+            cell.SetPanelEvent("onactivate", closeMenu);
+        }
+    }
+
+    function removeHitGrid() {
+        const container = find("CategoryContainer");
+        const grid = container ? container.FindChild(HIT_GRID_ID) : null;
+        if (grid) {
+            grid.DeleteAsync(0);
+        }
+        gridSize = "";
+    }
+
+    function menuButton(parent, text, onClick, extraClass) {
+        const button = $.CreatePanel("Button", parent, "");
+        button.AddClass("EasyMenuItem");
+        if (extraClass) {
+            button.AddClass(extraClass);
+        }
+        const label = $.CreatePanel("Label", button, "");
+        label.text = text;
+        button.SetPanelEvent("onactivate", onClick);
+        return button;
+    }
+
+    function closeMenu() {
+        const container = find("CategoryContainer");
+        const menu = container ? container.FindChild(MENU_ID) : null;
+        if (menu) {
+            menu.DeleteAsync(0);
+        }
+        menuAt = null;
+        clearShopFilter();
+    }
+
+    function newMenu(at) {
+        const container = find("CategoryContainer");
+        if (!container) {
+            return null;
+        }
+        const old = container.FindChild(MENU_ID);
+        if (old) {
+            old.DeleteAsync(0);
+        }
+        menuAt = at;
+        const menu = $.CreatePanel("Panel", container, MENU_ID);
+        menu.style.x = `${Math.round(at.x)}px`;
+        menu.style.y = `${Math.round(at.y)}px`;
+        return menu;
+    }
+
+    function openMenu(at) {
+        if (!applied) {
+            return;
+        }
+        clearShopFilter();
+        const menu = newMenu(at);
+        if (!menu) {
+            return;
+        }
+        menuButton(menu, "Create category", () => createCategoryAt(at));
+        const target = focusedCategory();
+        const addLabel = target ? `Add item to ${categoryName(target)}` : "Add item";
+        menuButton(menu, addLabel, () => openSearch(at));
+    }
+
+    function createCategoryAt(at) {
+        closeMenu();
+        spawnAt = { x: at.x, y: at.y, previousCount: categories().length };
+        queueSection("");
+    }
+
+    // ---- add item: search the shop by name ----
+
+    function cardName(card) {
+        const walk = panel => {
+            for (const child of panel.Children()) {
+                if (child.BHasClass("modName")) {
+                    return child;
+                }
+                const found = walk(child);
+                if (found) {
+                    return found;
+                }
+            }
+            return null;
+        };
+        const label = walk(card);
+        return label ? label.text : "";
+    }
+
+    function shopCards() {
+        return modIcons(shopPanel()).map(card => ({ card: card, name: cardName(card) })).filter(c => c.name);
+    }
+
+    // Best matches first: name starts with the query, then a word does, then
+    // it appears anywhere.
+    function searchShop(query) {
+        const q = query.trim().toLowerCase();
+        if (!q) {
+            return [];
+        }
+        const rank = name => {
+            const n = name.toLowerCase();
+            if (n.startsWith(q)) {
+                return 0;
+            }
+            if (n.split(/\s+/).some(word => word.startsWith(q))) {
+                return 1;
+            }
+            return n.includes(q) ? 2 : -1;
+        };
+        return shopCards()
+            .map(c => Object.assign(c, { rank: rank(c.name) }))
+            .filter(c => c.rank >= 0)
+            .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    }
+
+    let filtered = [];
+
+    function filterShop(keep) {
+        clearShopFilter();
+        if (!keep) {
+            return;
+        }
+        for (const card of modIcons(shopPanel())) {
+            if (!keep.includes(card)) {
+                card.style.opacity = "0.15";
+                filtered.push(card);
+            }
+        }
+    }
+
+    function clearShopFilter() {
+        for (const card of filtered) {
+            try {
+                card.style.opacity = null;
+            } catch (e) {
+                // card was recreated by the game
+            }
+        }
+        filtered = [];
+    }
+
+    function openSearch(at) {
+        const menu = newMenu(at);
+        if (!menu) {
+            return;
+        }
+        menu.AddClass("Search");
+        const target = focusedCategory();
+        const title = $.CreatePanel("Label", menu, "");
+        title.AddClass("EasyMenuTitle");
+        title.text = target ? `Add to ${categoryName(target)}` : "Select a section first, then add";
+        const entry = $.CreatePanel("TextEntry", menu, "EasySearchEntry", { placeholder: "Search items..." });
+        const results = $.CreatePanel("Panel", menu, "EasySearchResults");
+
+        const render = () => {
+            const matches = searchShop(entry.text);
+            results.RemoveAndDeleteChildren();
+            filterShop(entry.text.trim() ? matches.map(m => m.card) : null);
+            for (const match of matches.slice(0, MAX_RESULTS)) {
+                menuButton(results, match.name, () => pickResult(match), "Result");
+            }
+            if (entry.text.trim() && matches.length === 0) {
+                const none = $.CreatePanel("Label", results, "");
+                none.AddClass("EasyMenuEmpty");
+                none.text = "No items match";
+            }
+        };
+        entry.SetPanelEvent("ontextentrychange", render);
+        entry.SetPanelEvent("oninputsubmit", () => {
+            const matches = searchShop(entry.text);
+            if (matches.length > 0) {
+                pickResult(matches[0]);
+            }
+        });
+        entry.SetPanelEvent("oncancel", closeMenu);
+        menuButton(menu, "Close", closeMenu, "Close");
+        $.Schedule(0.05, () => entry.SetFocus());
+    }
+
+    function pickResult(match) {
+        const category = focusedCategory();
+        if (!category) {
+            setStatus("Select a section first");
+            return;
+        }
+        filterShop([match.card]);
+        const before = itemCount(category);
+        addFromShop(match.card);
+        $.Schedule(0.6, () => {
+            if (itemCount(category) > before) {
+                setStatus(`Added ${match.name} to ${categoryName(category)}`);
+                closeMenu();
+            } else {
+                setStatus(`Drag ${match.name} from the shop onto ${categoryName(category)}`);
+            }
+        });
+    }
+
     // ---- main loop ----
 
     function apply(on) {
@@ -699,8 +992,13 @@ var EasyBuildEditor = (function () {
         for (const category of categories()) {
             tidyCategory(category, on);
         }
-        if (!on) {
+        if (on) {
+            selectAllItemsTab();
+        } else {
+            closeMenu();
+            removeHitGrid();
             clearFreeLayout();
+            restoreBuildTab();
         }
         log(on ? "easy mode on" : "easy mode off");
     }
@@ -726,14 +1024,10 @@ var EasyBuildEditor = (function () {
             }
             placeCategories();
             freeLayout(list);
+            sizeHitGrid(list);
             hookIcons();
             refreshSelection(list);
             processPendingNames();
-            iconLogCountdown--;
-            if (iconLogCountdown <= 0) {
-                iconLogCountdown = 15;
-                logIcons("tick");
-            }
             setStatus(`${list.length} section${list.length === 1 ? "" : "s"}, ${totalItems(list)} items`);
         }
 

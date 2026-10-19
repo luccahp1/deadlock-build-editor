@@ -71,7 +71,9 @@
 				<Button class="EasyChip" onmouseactivate="CitadelHudHeroBuildsCompactCategory( -1 )"><Label text="Compact all" /></Button>
 				<Button class="EasyChip" onactivate="EasyBuildEditor.ToggleSplit()"><Label id="EasySplitLabel" text="Hide shop" /></Button>
 			</Panel>
-			<Label class="EasyHint" text="Select a section, then drag items from the shop onto it. Rename it in Edit Category on the left." />
+			<Label class="EasyHint" text="Select a section, then drag items from the shop onto it. Right-click empty space to create a category or search for an item." />
+			<Button id="EasyTabAllItems" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_AllItems )" />
+			<Button id="EasyTabBuild" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_Build )" />
 		</Panel>
 		<Panel id="EasyFooter" hittest="true">
 			<Button class="EasyFooterButton Save" onmouseactivate="CitadelHudHeroBuildsSaveEdits()"><Label text="SAVE BUILD" /></Button>

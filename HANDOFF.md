@@ -8,6 +8,19 @@ game's Edit Build panel as a 250px strip along the bottom, the shop's side tab s
 `x`/`y` inline styles, session only: builds store order and width, not positions).
 Turning Easy mode off restores the vanilla layout exactly (verified).
 
+Entering Easy mode selects the All Items shop tab (`EasyTabAllItems` trigger button). The
+game only fills in shop cards (art, tier, colours) for the selected tab; without this the
+shop showed empty cards in the Weapon layout. Verified: `cards 156/156 filled` in the log.
+Leaving Easy mode re-selects the Build tab. The shop scrolls (`overflow: clip scroll`),
+All Items content is ~1875px tall.
+
+Right-click on empty space in the build area opens a menu: Create category (new section
+spawns where you clicked) and Add item (search box; filters/dims the shop, Enter or a result
+tries to add it to the focused section, otherwise tells you to drag it). There is no cursor
+position API, so the empty space is covered by a grid of 32px hit cells (`EasyHitGrid`,
+first child of `CategoryContainer`) and the clicked cell gives the position. User checked
+it in game and it looked right; adding via search shares the unverified click-to-add path.
+
 Right-click: shop item = add to selected section, build item = remove. Wired, but unverified:
 in the hideout shop items are disabled (no shop nearby) and neither left-click nor the
 replayed `Activated` event adds anything there. Needs a test inside a match.
@@ -35,8 +48,8 @@ with measured sizes when Easy mode turns on.
 
 ## Known issues / unverified
 
-- After a restart the shop half is blank until a shop tab (Weapon/Spirit/Vitality) is picked.
-  Should auto-select Weapon on entering Easy mode.
+- On leaving Easy mode the game wrote `cached_hero_builds.kv3` twice 5ms apart; the first
+  write errored (busy), the second succeeded. Not yet known if vanilla Save does the same.
 - Quick-add sections (Early/Mid/Late/...) and renaming via `CategoryNameTextEntry` untested.
 - Drag-drop after the z-index change confirmed only by a synthetic drag that did not land;
   needs a real mouse test.
