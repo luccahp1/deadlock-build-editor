@@ -2,11 +2,15 @@
 
 ## State (2026-10-19)
 
-V1 runs in-game (tested on 1920x1080). Verified: mod loads, Easy Editor button sits left of
-the info icon in edit mode, Easy mode lays out edit sidebar (80%) | full shop (all four tiers,
-~74% scale) | build (85%) across the whole screen, "Adding to" banner tracks the focused
-section, toolbar shop tabs work, header buttons decluttered. Items are added the vanilla way,
-by dragging from the shop onto a section (one drag confirmed landing; z-order fix applied after).
+Runs in-game (tested 1920x1080). Easy mode layout: shop (scaled to fit) | build on top, the
+game's Edit Build panel as a 250px strip along the bottom, the shop's side tab strip hidden
+(toolbar chips switch tabs). Sections have a MOVE grip and stay where dropped (free placement,
+`x`/`y` inline styles, session only: builds store order and width, not positions).
+Turning Easy mode off restores the vanilla layout exactly (verified).
+
+Right-click: shop item = add to selected section, build item = remove. Wired, but unverified:
+in the hideout shop items are disabled (no shop nearby) and neither left-click nor the
+replayed `Activated` event adds anything there. Needs a test inside a match.
 
 Testing loop: build, copy `dist/pak42_dir.vpk` into `game/citadel/addons`, restart the game
 (mods load at startup only). Launch with `steam.exe -applaunch 1422450 -condebug -dev` so
@@ -37,6 +41,11 @@ with measured sizes when Easy mode turns on.
 - Drag-drop after the z-index change confirmed only by a synthetic drag that did not land;
   needs a real mouse test.
 - `ui-scale` scales a panel's own px width too: give widths in the panel's scaled units.
+- Inline style names in JS are aliases: `marginTop` etc. cannot be unset. Clear the base
+  property instead (`margin`, `padding`, `align`, `position`), see `BASE_STYLE`. Clearing
+  `visibility` leaves a panel hidden, so restore it to `visible` or hide with opacity.
+- Items are `CitadelShopMod` panels; JS cannot read their item id.
+  `CitadelHudHeroBuildsToggleMod` takes two numbers (meaning unknown).
 - Only tested at 1920x1080; layout reads the root width so other 16:9 sizes should follow.
 
 ## Next ideas (V1.1)

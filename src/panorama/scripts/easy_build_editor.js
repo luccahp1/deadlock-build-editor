@@ -10,14 +10,25 @@ var EasyBuildEditor = (function () {
     const LOG_PREFIX = "[EasyBuildEditor] ";
     const TICK_EDITING = 0.2;
     const TICK_IDLE = 0.5;
-    // Full-screen layout: edit sidebar | shop | build.
-    const SIDEBAR_SCALE = 0.8;
-    const SIDEBAR_WIDTH = 520; // CitadelHudHeroBuilds width in the game's CSS
-    const SIDEBAR_LEFT = 20;
+    // Full-screen layout: shop | build on top, the game's Edit Build panel as a
+    // strip along the bottom.
     const GAP = 16;
+    const MARGIN = 20;
+    const TOP = 20;               // the game's MainPanel margin-top
+    const STRIP_HEIGHT = 250;
+    const STRIP_BOTTOM = 84;      // clears the ability bar and ESC hint
     const SHOP_NATIVE_WIDTH = 1110; // shop list width inside the game's 1200px MainPanel
-    const SHOP_SHARE = 0.6;
+    const SHOP_NATIVE_HEIGHT = 960;
+    const SHOP_MAX_SHARE = 0.62;
     const BUILD_SCALE = 0.85;
+    // Edit Build sections across the strip.
+    const STRIP_SECTIONS = [
+        { id: "EditBuildSection", width: 600 },
+        { id: "EditCategorySection", width: 420 },
+        { id: "EditModSection", width: 420 },
+        { id: "AbilityOrder", width: 0 },
+        { id: "SaveChangesSection", width: 200 },
+    ];
     const STARTER_SECTIONS = ["Early Game", "Mid Game", "Late Game", "Situational"];
 
     const buildPanel = $.GetContextPanel();
@@ -28,6 +39,7 @@ var EasyBuildEditor = (function () {
     let tickScheduled = false;
     let dumped = false;
     let pendingNames = [];
+    let iconLogCountdown = 5;
 
     function log(message) {
         $.Msg(LOG_PREFIX + message);
@@ -111,12 +123,35 @@ var EasyBuildEditor = (function () {
         panel.style[prop] = value;
     }
 
+    // camelCase style names are aliases in Panorama and cannot be unset; the
+    // CSS property name (margin-right, horizontal-align, ...) can.
+    const BASE_STYLE = {
+        x: "position", y: "position",
+        marginTop: "margin", marginRight: "margin", marginBottom: "margin", marginLeft: "margin",
+        paddingTop: "padding", paddingRight: "padding", paddingBottom: "padding", paddingLeft: "padding",
+        horizontalAlign: "align", verticalAlign: "align",
+    };
+
+    function clearStyle(panel, prop) {
+        if (prop === "visibility") {
+            // Clearing visibility leaves the panel hidden; everything we hide
+            // is visible in the game's own layout.
+            panel.style.visibility = "visible";
+            return;
+        }
+        panel.style[BASE_STYLE[prop] || prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase())] = null;
+    }
+
     function restoreStyles() {
         for (const t of touched) {
-            if (t.panel.IsValid && !t.panel.IsValid()) {
-                continue;
+            try {
+                if (t.panel.IsValid && !t.panel.IsValid()) {
+                    continue;
+                }
+                clearStyle(t.panel, t.prop);
+            } catch (e) {
+                log(`restore ${t.prop} failed: ${e}`);
             }
-            t.panel.style[t.prop] = null;
         }
         touched.length = 0;
     }
@@ -135,17 +170,88 @@ var EasyBuildEditor = (function () {
         return section ? section.GetParent() : null;
     }
 
-    function screenWidth() {
+    function screenSize() {
         const root = hudRoot();
-        const scale = root.actualuiscale_x || 1;
-        return Math.round(root.actuallayoutwidth / scale) || 1920;
+        const w = Math.round(root.actuallayoutwidth / (root.actualuiscale_x || 1)) || 1920;
+        const h = Math.round(root.actuallayoutheight / (root.actualuiscale_y || 1)) || 1080;
+        return { w: w, h: h };
+    }
+
+    function layoutEditStrip(screen) {
+        const strip = editSidebar();
+        if (!strip) {
+            return;
+        }
+        setStyle(strip, "flowChildren", "right");
+        setStyle(strip, "horizontalAlign", "left");
+        setStyle(strip, "verticalAlign", "bottom");
+        setStyle(strip, "marginLeft", `${MARGIN}px`);
+        setStyle(strip, "marginBottom", `${STRIP_BOTTOM}px`);
+        setStyle(strip, "paddingTop", "0px");
+        setStyle(strip, "width", `${screen.w - MARGIN * 2}px`);
+        setStyle(strip, "height", `${STRIP_HEIGHT}px`);
+
+        for (const child of strip.Children()) {
+            if (child.BHasClass("EditSectionTitle")) {
+                setStyle(child, "visibility", "collapse");
+            }
+        }
+        for (const section of STRIP_SECTIONS) {
+            const panel = strip.FindChild(section.id);
+            if (!panel) {
+                continue;
+            }
+            setStyle(panel, "height", "100%");
+            setStyle(panel, "marginTop", "0px");
+            setStyle(panel, "marginBottom", "0px");
+            setStyle(panel, "marginLeft", "0px");
+            setStyle(panel, "marginRight", "8px");
+            if (section.width > 0) {
+                setStyle(panel, "width", `${section.width}px`);
+            }
+        }
+        const save = strip.FindChild("SaveChangesSection");
+        setStyle(save, "flowChildren", "down");
+        const description = strip.FindChildTraverse("BuildDescriptionTextEntry");
+        setStyle(description, "height", "40px");
+        setStyle(description, "width", "100%");
+    }
+
+    function iconStats(panel) {
+        if (!panel) {
+            return "none";
+        }
+        const icons = [];
+        const walk = p => {
+            for (const c of p.Children()) {
+                if (ITEM_TYPES.includes(c.paneltype)) {
+                    icons.push(c);
+                } else {
+                    walk(c);
+                }
+            }
+        };
+        walk(panel);
+        const withArt = icons.filter(i => i.BHasClass("hasAbility")).length;
+        return `${withArt}/${icons.length} hasAbility`;
+    }
+
+    function logIcons(tag) {
+        log(`icons ${tag}: build ${iconStats(buildPanel)}, shop ${iconStats(shopPanel())}`);
     }
 
     function logLayout(shop) {
+        const strip = editSidebar();
+        if (strip) {
+            const parent = strip.GetParent();
+            log(`strip: y=${strip.actualyoffset} h=${strip.actuallayoutheight} scale=${strip.actualuiscale_y} ` +
+                `parent=${parent ? parent.paneltype + "#" + parent.id : "?"} parentH=${parent ? parent.actuallayoutheight : 0}`);
+        }
+        logIcons("on layout");
         if (!shop) {
             return;
         }
-        log(`layout: screen=${screenWidth()} shop=${shop.actuallayoutwidth}x${shop.actuallayoutheight} ` +
+        log(`layout: screen=${screenSize().w}x${screenSize().h} shop=${shop.actuallayoutwidth}x${shop.actuallayoutheight} ` +
             `scale=${shop.actualuiscale_x} build=${buildPanel.actuallayoutwidth} x=${buildPanel.actualxoffset}`);
     }
 
@@ -157,22 +263,27 @@ var EasyBuildEditor = (function () {
             return;
         }
 
-        const sidebarRight = SIDEBAR_LEFT + Math.round(SIDEBAR_WIDTH * SIDEBAR_SCALE);
-        const mainWidth = screenWidth() - sidebarRight - GAP * 2;
+        const screen = screenSize();
+        layoutEditStrip(screen);
 
-        setStyle(editSidebar(), "uiScale", `${SIDEBAR_SCALE * 100}%`);
+        const mainWidth = screen.w - MARGIN * 2;
+        const mainHeight = screen.h - TOP - STRIP_HEIGHT - STRIP_BOTTOM - GAP;
         setStyle(ancestorById("Shop"), "marginRight", "0px");
         setStyle(ancestorById("Shop"), "width", "100%");
         setStyle(ancestorById("MainPanel"), "width", `${mainWidth}px`);
-        setStyle(ancestorById("MainPanel"), "marginRight", `${GAP}px`);
+        setStyle(ancestorById("MainPanel"), "height", `${mainHeight}px`);
+        setStyle(ancestorById("MainPanel"), "marginRight", `${MARGIN}px`);
         setStyle(ancestorById("ShopModsContainer"), "marginRight", "0px");
+        // The toolbar switches shop tabs, so the game's side tab strip is hidden.
+        const shopTabs = ancestorById("ShopModsContainer");
+        setStyle(shopTabs ? shopTabs.FindChild("ShopNavigation") : null, "visibility", "collapse");
 
-        const listsWidth = mainWidth - 90; // minus the shop's tab strip
-        const shopWidth = Math.round(listsWidth * SHOP_SHARE);
-        const shopScale = Math.min(1, shopWidth / SHOP_NATIVE_WIDTH);
+        // Shop scaled so a whole tab fits both the height and its share of the width.
+        const listsWidth = mainWidth;
+        const shopScale = Math.min(1, mainHeight / SHOP_NATIVE_HEIGHT,
+            (listsWidth * SHOP_MAX_SHARE) / SHOP_NATIVE_WIDTH);
+        const shopWidth = Math.round(SHOP_NATIVE_WIDTH * shopScale);
 
-        // ui-scale also scales the panel's own px width, so widths are given
-        // in the panel's scaled units: native width * scale = space on screen.
         const shop = shopPanel();
         setStyle(shop, "width", `${SHOP_NATIVE_WIDTH}px`);
         setStyle(shop, "uiScale", `${Math.round(shopScale * 100)}%`);
@@ -225,16 +336,26 @@ var EasyBuildEditor = (function () {
     // ---- per-category tidy up ----
 
     function tidyCategory(category, on) {
-        category.style.minWidth = on ? "100%" : null;
         for (const id of ["CategoryDragHandle", "CategoryResizeHandle"]) {
             const handle = category.FindChildTraverse(id);
             if (handle) {
-                handle.style.visibility = on ? "collapse" : null;
+                // Hidden by opacity: the game shows these only on the focused
+                // section, and a cleared visibility would not come back.
+                if (on) {
+                    handle.style.opacity = "0";
+                } else {
+                    clearStyle(handle, "opacity");
+                }
+                handle.hittest = !on;
             }
         }
         const header = category.FindChildTraverse("BuildCategoryHeader");
         if (header) {
-            header.style.backgroundColor = on && category.BHasClass("Focused") ? "#3fb37f55" : null;
+            if (on && category.BHasClass("Focused")) {
+                header.style.backgroundColor = "#3fb37f55";
+            } else {
+                clearStyle(header, "backgroundColor");
+            }
         }
     }
 
@@ -311,6 +432,261 @@ var EasyBuildEditor = (function () {
         }
     }
 
+    // ---- right-click: add from the shop, remove from the build ----
+    //
+    // The game adds items when one is dropped onto a section and has no
+    // documented "add item" call, so each method below is tried in turn and
+    // checked by counting the section's items. The first one that works is
+    // remembered for the rest of the session.
+
+    const ITEM_TYPES = ["CitadelShopMod", "CitadelModIcon"];
+    // In edit mode the game adds a shop item / removes a build item when the
+    // item is clicked, so right-click replays that click.
+    const ADD_METHODS = [
+        { name: "Activated mouse", run: icon => $.DispatchEvent("Activated", icon, "mouse") },
+        { name: "Activated keyboard", run: icon => $.DispatchEvent("Activated", icon, "keyboard") },
+        { name: "MouseActivate", run: icon => $.DispatchEvent("MouseActivate", icon) },
+    ];
+    const REMOVE_METHODS = ADD_METHODS;
+    let addMethod = -1;
+    let removeMethod = -1;
+
+    function modIcons(root) {
+        const icons = [];
+        const walk = panel => {
+            for (const child of panel.Children()) {
+                if (ITEM_TYPES.includes(child.paneltype)) {
+                    icons.push(child);
+                } else {
+                    walk(child);
+                }
+            }
+        };
+        if (root) {
+            walk(root);
+        }
+        return icons;
+    }
+
+    function focusedCategory() {
+        return categories().find(c => c.BHasClass("Focused")) || null;
+    }
+
+    function owningCategory(icon) {
+        for (let panel = icon.GetParent(); panel; panel = panel.GetParent()) {
+            if (panel.paneltype === "CitadelShopModsBuildCategory") {
+                return panel;
+            }
+        }
+        return null;
+    }
+
+    // Tries methods from `start` until the item count moves by `wantDelta`.
+    function tryMethods(methods, start, icon, target, countOf, wantDelta, done) {
+        if (start >= methods.length) {
+            setStatus("Right-click could not change the build, drag instead");
+            log("right-click: no method worked");
+            done(-1);
+            return;
+        }
+        const before = countOf();
+        try {
+            methods[start].run(icon, target);
+        } catch (e) {
+            log(`right-click: ${methods[start].name} threw ${e}`);
+        }
+        $.Schedule(0.15, () => {
+            if (countOf() - before === wantDelta) {
+                log(`right-click: ${methods[start].name} works`);
+                done(start);
+            } else {
+                log(`right-click: ${methods[start].name} did nothing`);
+                tryMethods(methods, start + 1, icon, target, countOf, wantDelta, done);
+            }
+        });
+    }
+
+
+    function addFromShop(icon) {
+        const category = focusedCategory();
+        if (!category) {
+            setStatus("Select a section first");
+            return;
+        }
+        if (addMethod >= 0) {
+            ADD_METHODS[addMethod].run(icon, category);
+            return;
+        }
+        tryMethods(ADD_METHODS, 0, icon, category, () => itemCount(category), 1, found => { addMethod = found; });
+    }
+
+    function removeFromBuild(icon) {
+        const category = owningCategory(icon);
+        if (!category) {
+            return;
+        }
+        if (removeMethod >= 0) {
+            REMOVE_METHODS[removeMethod].run(icon, category);
+            return;
+        }
+        tryMethods(REMOVE_METHODS, 0, icon, category, () => itemCount(category), -1, found => { removeMethod = found; });
+    }
+
+    // Icons are recreated by the game, so new ones are hooked every tick. The
+    // handlers do nothing outside Easy mode.
+    function hookIcons() {
+        for (const icon of modIcons(shopPanel())) {
+            if (!icon.BHasClass("EasyHooked")) {
+                icon.AddClass("EasyHooked");
+                icon.SetPanelEvent("oncontextmenu", () => {
+                    if (applied) {
+                        addFromShop(icon);
+                    }
+                });
+            }
+        }
+        for (const icon of modIcons(find("CategoryContainer"))) {
+            if (!icon.BHasClass("EasyHooked")) {
+                icon.AddClass("EasyHooked");
+                icon.SetPanelEvent("oncontextmenu", () => {
+                    if (applied) {
+                        removeFromBuild(icon);
+                    }
+                });
+            }
+        }
+    }
+
+    // ---- free placement of sections ----
+    //
+    // Sections stay where they are dropped, no snapping. Positions live for
+    // this game session only: the build itself stores order and width, not
+    // positions.
+
+    const GRIP_ID = "EasyMoveGrip";
+    const positions = {};
+
+    function positionKey(list, category) {
+        const name = categoryName(category);
+        let nth = 0;
+        for (const other of list) {
+            if (other === category) {
+                break;
+            }
+            if (categoryName(other) === name) {
+                nth++;
+            }
+        }
+        return `${name}#${nth}`;
+    }
+
+    function unitsOf(panel) {
+        return panel.actualuiscale_x || 1;
+    }
+
+    function placeSection(category, pos) {
+        category.style.x = `${Math.round(pos.x)}px`;
+        category.style.y = `${Math.round(pos.y)}px`;
+    }
+
+    function addGrip(category, key) {
+        const header = category.FindChildTraverse("BuildCategoryHeader");
+        if (!header || header.FindChild(GRIP_ID)) {
+            return;
+        }
+        const grip = $.CreatePanel("Label", header, GRIP_ID);
+        grip.text = "MOVE";
+        grip.style.fontSize = "11px";
+        grip.style.fontWeight = "bold";
+        grip.style.color = "#0b1a12";
+        grip.style.backgroundColor = "#3fb37f";
+        grip.style.borderRadius = "3px";
+        grip.style.padding = "2px 6px";
+        grip.style.margin = "6px 4px 6px 8px";
+        grip.style.verticalAlign = "center";
+        header.MoveChildBefore(grip, header.GetChild(0));
+        grip.SetDraggable(true);
+
+        $.RegisterEventHandler("DragStart", grip, (panelId, drag) => {
+            const scale = unitsOf(category);
+            const ghost = $.CreatePanel("Panel", buildPanel, "EasyDragGhost");
+            ghost.style.width = `${Math.round(category.actuallayoutwidth / scale)}px`;
+            ghost.style.height = `${Math.round(category.actuallayoutheight / scale)}px`;
+            ghost.style.backgroundColor = "#3fb37f40";
+            ghost.style.border = "2px dashed #3fb37f";
+            ghost.style.borderRadius = "4px";
+            drag.displayPanel = ghost;
+            drag.offsetX = Math.round(grip.actualxoffset + grip.actuallayoutwidth / 2);
+            drag.offsetY = Math.round(grip.actualyoffset + grip.actuallayoutheight / 2);
+            drag.removePositionBeforeDrop = false;
+            category.style.opacity = "0.35";
+            return true;
+        });
+
+        $.RegisterEventHandler("DragEnd", grip, (panelId, ghost) => {
+            clearStyle(category, "opacity");
+            const container = find("CategoryContainer");
+            if (ghost && container) {
+                const ghostPos = ghost.GetPositionWithinWindow();
+                const boxPos = container.GetPositionWithinWindow();
+                const scale = unitsOf(container);
+                const scrollY = container.scrolloffset_y || 0;
+                const pos = {
+                    x: Math.max(0, (ghostPos.x - boxPos.x) / scale),
+                    y: Math.max(0, (ghostPos.y - boxPos.y - scrollY) / scale),
+                };
+                log(`moved "${key}" to ${Math.round(pos.x)},${Math.round(pos.y)} (ghost ${ghostPos.x},${ghostPos.y} box ${boxPos.x},${boxPos.y} scroll ${scrollY})`);
+                positions[key] = pos;
+                placeSection(category, pos);
+            }
+            if (ghost) {
+                ghost.DeleteAsync(0);
+            }
+            return true;
+        });
+    }
+
+    function freeLayout(list) {
+        const container = find("CategoryContainer");
+        if (!container) {
+            return;
+        }
+        setStyle(container, "flowChildren", "none");
+
+        // Sections without a position go below everything already placed.
+        let nextY = 0;
+        for (const category of list) {
+            const pos = positions[positionKey(list, category)];
+            if (pos) {
+                nextY = Math.max(nextY, pos.y + category.actuallayoutheight / unitsOf(category) + 12);
+            }
+        }
+        for (const category of list) {
+            const key = positionKey(list, category);
+            if (!positions[key]) {
+                positions[key] = { x: 0, y: nextY };
+                nextY += category.actuallayoutheight / unitsOf(category) + 12;
+            }
+            placeSection(category, positions[key]);
+            addGrip(category, key);
+        }
+    }
+
+    function clearFreeLayout() {
+        for (const category of categories()) {
+            try {
+                clearStyle(category, "x");
+                clearStyle(category, "opacity");
+            } catch (e) {
+                log(`clear position failed: ${e}`);
+            }
+            const grip = category.FindChildTraverse(GRIP_ID);
+            if (grip) {
+                grip.DeleteAsync(0);
+            }
+        }
+    }
+
     // ---- main loop ----
 
     function apply(on) {
@@ -322,6 +698,9 @@ var EasyBuildEditor = (function () {
         applySplit(on && splitWanted);
         for (const category of categories()) {
             tidyCategory(category, on);
+        }
+        if (!on) {
+            clearFreeLayout();
         }
         log(on ? "easy mode on" : "easy mode off");
     }
@@ -346,8 +725,15 @@ var EasyBuildEditor = (function () {
                 applySplit(true);
             }
             placeCategories();
+            freeLayout(list);
+            hookIcons();
             refreshSelection(list);
             processPendingNames();
+            iconLogCountdown--;
+            if (iconLogCountdown <= 0) {
+                iconLogCountdown = 15;
+                logIcons("tick");
+            }
             setStatus(`${list.length} section${list.length === 1 ? "" : "s"}, ${totalItems(list)} items`);
         }
 
