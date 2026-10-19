@@ -1,33 +1,59 @@
 # Deadlock Easy Build Editor
 
-A client-side UI mod for Deadlock that adds an **Easy Editor** button to the hero build editor
-(next to the info icon, in edit mode). It turns the editor into one screen:
+A client-side UI mod for [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) that
+turns the hero build editor into a single screen. Press **Easy Editor** in edit mode and you get
+the full item shop and your build side by side, with the game's Edit Build controls in a strip
+along the bottom.
 
-- **Split view**: the item shop on the left, your build on the right, so adding items no longer
-  means flipping between the shop tabs and the build tab.
-- **"Adding to" banner**: shows which section is selected and how many items it holds.
-- **Shop shortcuts**: Weapon / Spirit / Vitality / All tabs in the toolbar.
-- **Quick-add sections**: Early, Mid, Late, Situational, Blank, or a 4-section starter set.
-- **Tidy layout**: full-width sections, drag and resize handles hidden, compact all.
+It only changes UI files. Every edit still goes through the game's own build commands, so
+saving, sharing and publishing work exactly as they do without the mod. No gameplay changes,
+no memory editing, no injected code.
+
+## Features
+
+- **Shop and build on one screen.** The All Items shop (Weapon, Spirit and Vitality) sits on the
+  left, scaled to fit, and the build sits on the right. No more flipping between tabs to add items.
+- **Free section placement.** Grab a section by its **MOVE** tag and drop it anywhere. Sections
+  stay where you put them, with no snapping.
+- **Right-click menu.** Right-click empty space in the build area to:
+  - **Create category** at that spot.
+  - **Add item**: search the shop by name. Matching items stay lit in the shop and the rest dim,
+    so you can drag the one you want, or press Enter to add the best match.
+- **Right-click items.** Right-click a shop item to add it to the selected section, or a build
+  item to remove it.
+- **"Adding to" banner.** Shows which section is selected and how many items it holds.
+- **Toolbar.** Shop tab shortcuts, quick-add sections (Early, Mid, Late, Situational, Blank, or a
+  four-section starter set), Compact all, and Hide shop.
 - **Save / Cancel** pinned at the bottom of the build.
 
-All edits still go through the game's own build commands, so saving, sharing and publishing
-behave exactly as they do without the mod. It only changes UI files; no gameplay, no memory
-editing, no injected code.
+Turning Easy mode off puts the editor back to the game's own layout.
 
 ## Install
 
-1. Build it (below) or take `dist/pak42_dir.vpk`.
+1. Download `dist/pak42_dir.vpk` from this repository, or build it yourself (below).
 2. Copy it into `Steam\steamapps\common\Deadlock\game\citadel\addons\`.
-   If `pak42_dir.vpk` is taken, rebuild with another number: `python build.py --pak 43`.
-3. Your `gameinfo.gi` must have `Game citadel/addons` in `SearchPaths` (any mod manager sets this).
-4. Restart Deadlock. Open a build, press Edit, then **Easy Editor**.
+   If you already have a `pak42_dir.vpk` from another mod, rebuild with a free number:
+   `python build.py --pak 43`.
+3. Make sure `game\citadel\gameinfo.gi` lists `Game citadel/addons` under `SearchPaths`.
+   Mod managers usually set this up for you.
+4. Restart Deadlock (mods load at startup only).
+5. Open the shop, pick a build, press **Edit**, then **Easy Editor**.
 
-Uninstall by deleting the VPK.
+To uninstall, delete the VPK.
 
-## Build
+## Known limitations
 
-Requirements: Windows, Python 3.10+, .NET 10 SDK, a Deadlock install.
+- Section positions last for the current game session. Builds store section order and width,
+  not positions.
+- Adding an item with a right-click or from search relies on the game accepting a replayed click
+  on the shop item. It is not confirmed to work everywhere; dragging the item onto a section
+  always works.
+- Tested at 1920x1080. The layout reads the screen size, so other 16:9 resolutions should work.
+- A game patch that changes the build panel layout can break the mod until it is updated.
+
+## Build from source
+
+Requirements: Windows, Python 3.10+, the .NET 10 SDK and a Deadlock install.
 
 ```bash
 git clone https://github.com/ValveResourceFormat/ValveResourceFormat _ext/vrf
@@ -35,25 +61,29 @@ dotnet build tools/pancomp -c Release -o tools/bin
 python build.py
 ```
 
-`tools/pancomp` is a small compiler built on ValveResourceFormat. It compiles Panorama
-`xml`, `css` and `js` sources into the `vxml_c`, `vcss_c` and `vts_c` resources Deadlock loads,
-using the game's own compiled files as templates, and packs them into a VPK.
+The output is `dist/pak42_dir.vpk`.
 
-## Layout
+`tools/pancomp` is a small compiler built on ValveResourceFormat. It compiles Panorama `xml`,
+`css` and `js` sources into the `vxml_c`, `vcss_c` and `vts_c` resources Deadlock loads, using
+the game's own compiled files as templates, and packs them into a VPK.
 
-| Path | What |
+## Project layout
+
+| Path | Contents |
 |---|---|
-| `src/panorama/layout/citadel_shop_mods_build.xml` | The game's build panel layout plus the button, toolbar and footer |
-| `src/panorama/styles/easy_build_editor.css` | Styles for the new UI |
-| `src/panorama/scripts/easy_build_editor.js` | Split view, selection banner, quick-add, tidy |
-| `tools/pancomp` | Panorama compiler + VPK packer |
-| `tools/vpkread.py` | Minimal VPK reader/extractor |
-| `build.py` | Compile and pack |
+| `src/panorama/layout/citadel_shop_mods_build.xml` | The game's build panel layout plus the Easy Editor button, toolbar and footer |
+| `src/panorama/styles/easy_build_editor.css` | Styles for the added UI |
+| `src/panorama/scripts/easy_build_editor.js` | Layout, free placement, right-click menu, search |
+| `tools/pancomp` | Panorama compiler and VPK packer |
+| `tools/vpkread.py` | Minimal VPK reader and extractor |
+| `tools/blocks.py` | Resource block inspector |
+| `build.py` | Compiles the sources and packs the VPK |
 
 ## Updating after a game patch
 
-The mod replaces `citadel_shop_mods_build` with a copy of Valve's version. If a patch changes
-that file, decompile the new one, carry the Easy Editor additions over, and rebuild:
+The mod replaces `citadel_shop_mods_build` with a modified copy of the game's version. If a patch
+changes that file, extract and decompile the new one, carry the Easy Editor additions over, then
+rebuild:
 
 ```bash
 python tools/vpkread.py "<Deadlock>/game/citadel/pak01_dir.vpk" x _ref "citadel_shop_mods_build"
@@ -62,5 +92,11 @@ tools/s2v/Source2Viewer-CLI.exe -i _ref/panorama/layout/citadel_shop_mods_build.
 
 ## Troubleshooting
 
-The script logs to the game console with the prefix `[EasyBuildEditor]` (also in
-`game/citadel/console.log`). The first press of the button prints the panel tree it found.
+Launch with `-condebug` to write the game console to `game/citadel/console.log`. The mod logs
+lines prefixed with `[EasyBuildEditor]`, including the measured layout and how many shop cards
+loaded when Easy mode turns on.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Deadlock and its assets belong to Valve. This project is not
+affiliated with or endorsed by Valve.

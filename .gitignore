@@ -12,6 +12,6 @@ tools/pancomp/bin/
 tools/pancomp/obj/
 build/
 
-# local assistant files
+# local tool config
 CLAUDE.md
 .claude/

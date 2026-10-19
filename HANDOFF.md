@@ -25,6 +25,14 @@ Right-click: shop item = add to selected section, build item = remove. Wired, bu
 in the hideout shop items are disabled (no shop nearby) and neither left-click nor the
 replayed `Activated` event adds anything there. Needs a test inside a match.
 
+Section positions are kept per panel first (`panelPositions`), name key second, so renaming
+a section no longer drops it to the bottom. The add-item probe waits 0.35s per method
+(`PROBE_SETTLE`) so a slow add is not repeated by the next method. A menu spawn point expires
+after 5s if the new section never shows up. These three fixes are built and installed but not
+yet checked in game.
+
+Repo: https://github.com/luccahp1/deadlock-build-editor (public, MIT).
+
 Testing loop: build, copy `dist/pak42_dir.vpk` into `game/citadel/addons`, restart the game
 (mods load at startup only). Launch with `steam.exe -applaunch 1422450 -condebug -dev` so
 `game/citadel/console.log` is written live; the script logs `[EasyBuildEditor] layout: ...`
@@ -50,9 +58,8 @@ with measured sizes when Easy mode turns on.
 
 - On leaving Easy mode the game wrote `cached_hero_builds.kv3` twice 5ms apart; the first
   write errored (busy), the second succeeded. Not yet known if vanilla Save does the same.
-- Quick-add sections (Early/Mid/Late/...) and renaming via `CategoryNameTextEntry` untested.
-- Drag-drop after the z-index change confirmed only by a synthetic drag that did not land;
-  needs a real mouse test.
+- Quick-add sections and dragging items from the shop onto a section work with a real mouse
+  (seen in the user's screenshots: named sections holding items).
 - `ui-scale` scales a panel's own px width too: give widths in the panel's scaled units.
 - Inline style names in JS are aliases: `marginTop` etc. cannot be unset. Clear the base
   property instead (`margin`, `padding`, `align`, `position`), see `BASE_STYLE`. Clearing

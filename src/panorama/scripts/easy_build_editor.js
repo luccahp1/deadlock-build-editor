@@ -508,6 +508,10 @@ var EasyBuildEditor = (function () {
         return null;
     }
 
+    // Long enough for the game to rebuild the section, so a slow add is not
+    // mistaken for a failed one and repeated by the next method.
+    const PROBE_SETTLE = 0.35;
+
     // Tries methods from `start` until the item count moves by `wantDelta`.
     function tryMethods(methods, start, icon, target, countOf, wantDelta, done) {
         if (start >= methods.length) {
@@ -522,7 +526,7 @@ var EasyBuildEditor = (function () {
         } catch (e) {
             log(`right-click: ${methods[start].name} threw ${e}`);
         }
-        $.Schedule(0.15, () => {
+        $.Schedule(PROBE_SETTLE, () => {
             if (countOf() - before === wantDelta) {
                 log(`right-click: ${methods[start].name} works`);
                 done(start);
@@ -534,17 +538,29 @@ var EasyBuildEditor = (function () {
     }
 
 
-    function addFromShop(icon) {
+    // `onDone(added)` runs once the outcome is known.
+    function addFromShop(icon, onDone) {
         const category = focusedCategory();
+        const finish = added => {
+            if (onDone) {
+                onDone(added, category);
+            }
+        };
         if (!category) {
             setStatus("Select a section first");
+            finish(false);
             return;
         }
+        const before = itemCount(category);
         if (addMethod >= 0) {
             ADD_METHODS[addMethod].run(icon, category);
+            $.Schedule(PROBE_SETTLE, () => finish(itemCount(category) > before));
             return;
         }
-        tryMethods(ADD_METHODS, 0, icon, category, () => itemCount(category), 1, found => { addMethod = found; });
+        tryMethods(ADD_METHODS, 0, icon, category, () => itemCount(category), 1, found => {
+            addMethod = found;
+            finish(found >= 0);
+        });
     }
 
     function removeFromBuild(icon) {
@@ -591,7 +607,19 @@ var EasyBuildEditor = (function () {
     // positions.
 
     const GRIP_ID = "EasyMoveGrip";
+    // Looked up by panel first, so renaming a section does not move it; the
+    // name key covers panels the game recreates.
     const positions = {};
+    const panelPositions = new Map();
+
+    function positionOf(list, category) {
+        return panelPositions.get(category) || positions[positionKey(list, category)] || null;
+    }
+
+    function rememberPosition(list, category, pos) {
+        panelPositions.set(category, pos);
+        positions[positionKey(list, category)] = pos;
+    }
 
     function positionKey(list, category) {
         const name = categoryName(category);
@@ -616,7 +644,7 @@ var EasyBuildEditor = (function () {
         category.style.y = `${Math.round(pos.y)}px`;
     }
 
-    function addGrip(category, key) {
+    function addGrip(category) {
         const header = category.FindChildTraverse("BuildCategoryHeader");
         if (!header || header.FindChild(GRIP_ID)) {
             return;
@@ -662,8 +690,8 @@ var EasyBuildEditor = (function () {
                     x: Math.max(0, (ghostPos.x - boxPos.x) / scale),
                     y: Math.max(0, (ghostPos.y - boxPos.y - scrollY) / scale),
                 };
-                log(`moved "${key}" to ${Math.round(pos.x)},${Math.round(pos.y)} (ghost ${ghostPos.x},${ghostPos.y} box ${boxPos.x},${boxPos.y} scroll ${scrollY})`);
-                positions[key] = pos;
+                log(`moved "${categoryName(category)}" to ${Math.round(pos.x)},${Math.round(pos.y)}`);
+                rememberPosition(categories(), category, pos);
                 placeSection(category, pos);
             }
             if (ghost) {
@@ -683,23 +711,29 @@ var EasyBuildEditor = (function () {
         // Sections without a position go below everything already placed.
         let nextY = 0;
         for (const category of list) {
-            const pos = positions[positionKey(list, category)];
+            const pos = positionOf(list, category);
             if (pos) {
                 nextY = Math.max(nextY, pos.y + category.actuallayoutheight / unitsOf(category) + 12);
             }
         }
+        if (spawnAt && (Date.now() - spawnAt.at) / 1000 > SPAWN_TIMEOUT) {
+            spawnAt = null; // the section never arrived
+        }
         for (const category of list) {
-            const key = positionKey(list, category);
-            if (!positions[key] && spawnAt && list.length > spawnAt.previousCount) {
-                positions[key] = { x: spawnAt.x, y: spawnAt.y };
+            let pos = positionOf(list, category);
+            // A new panel may share its name key with a deleted section, so a
+            // pending spawn point wins over the name key.
+            if (!panelPositions.has(category) && spawnAt && list.length > spawnAt.previousCount) {
+                pos = { x: spawnAt.x, y: spawnAt.y };
                 spawnAt = null;
             }
-            if (!positions[key]) {
-                positions[key] = { x: 0, y: nextY };
+            if (!pos) {
+                pos = { x: 0, y: nextY };
                 nextY += category.actuallayoutheight / unitsOf(category) + 12;
             }
-            placeSection(category, positions[key]);
-            addGrip(category, key);
+            rememberPosition(list, category, pos);
+            placeSection(category, pos);
+            addGrip(category);
         }
     }
 
@@ -728,6 +762,7 @@ var EasyBuildEditor = (function () {
     const MENU_ID = "EasyContextMenu";
     const CELL = 32;
     const MAX_RESULTS = 8;
+    const SPAWN_TIMEOUT = 5; // seconds to wait for a section made from the menu
     let spawnAt = null;   // where the next new section goes
     let menuAt = null;
     let gridSize = "";
@@ -757,9 +792,9 @@ var EasyBuildEditor = (function () {
         const scale = unitsOf(container);
         let bottom = container.actuallayoutheight / scale;
         for (const category of list) {
-            const pos = positions[positionKey(list, category)];
+            const pos = positionOf(list, category);
             if (pos) {
-                bottom = Math.max(bottom, pos.y + category.actuallayoutheight / unitsOf(category) + CELL * 4);
+                bottom =Math.max(bottom, pos.y + category.actuallayoutheight / unitsOf(category) + CELL * 4);
             }
         }
         const cols = Math.max(1, Math.floor(container.actuallayoutwidth / scale / CELL));
@@ -847,7 +882,7 @@ var EasyBuildEditor = (function () {
 
     function createCategoryAt(at) {
         closeMenu();
-        spawnAt = { x: at.x, y: at.y, previousCount: categories().length };
+        spawnAt = { x: at.x, y: at.y, previousCount: categories().length, at: Date.now() };
         queueSection("");
     }
 
@@ -962,16 +997,12 @@ var EasyBuildEditor = (function () {
     }
 
     function pickResult(match) {
-        const category = focusedCategory();
-        if (!category) {
-            setStatus("Select a section first");
-            return;
-        }
         filterShop([match.card]);
-        const before = itemCount(category);
-        addFromShop(match.card);
-        $.Schedule(0.6, () => {
-            if (itemCount(category) > before) {
+        addFromShop(match.card, (added, category) => {
+            if (!category) {
+                return;
+            }
+            if (added) {
                 setStatus(`Added ${match.name} to ${categoryName(category)}`);
                 closeMenu();
             } else {
