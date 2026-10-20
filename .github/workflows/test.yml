@@ -1,0 +1,20 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Script parses
+        run: node --check src/panorama/scripts/easy_build_editor.js
+      - name: Offline tests (fake game)
+        run: npm test
+      - name: Python tools compile
+        run: python3 -m py_compile build.py tools/gamelog.py tools/vpkread.py

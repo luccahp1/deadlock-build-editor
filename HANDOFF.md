@@ -1,5 +1,25 @@
 # Handoff
 
+## Read first: testing without the game (2026-10-20)
+
+Run `npm test` after every change; it needs no game and works in cloud sessions. The full
+workflow, the fake-game assumptions, the research on avoiding restarts and the experiments still
+to try at home are in [docs/TESTING.md](docs/TESTING.md). On the PC, `tools/dev.ps1 -Restart`
+does the build / install / restart / wait loop, and `python tools/gamelog.py --check` reads the
+result.
+
+Exit-path audit done (table in docs/TESTING.md). Fixed in the script: tick-loop duplication on
+repeated toggles; a thrown tick killing the loop; right-click probes and queued sections running
+after Save/Cancel; drag ghost left after exit mid-drag; menu, dimmed shop and focused search box
+left behind when Esc closes the shop; Hide shop hiding the build (All Items tab stayed selected);
+`visible` never restored. The script now logs `loaded build <id>` on load and `exit check: clean`
+(or `LEFTOVER ...`) after every exit. The tab trigger buttons moved out of the toolbar.
+
+**`dist/pak42_dir.vpk` is older than `src/`.** These fixes were made in a cloud session without
+the game, so the VPK was not rebuilt and nothing above has been checked in game yet. Rebuild
+(`python build.py`) and check in game: Save, Cancel, Esc with the search open, Hide shop, and a
+right-click add in a match.
+
 ## State (2026-10-19)
 
 Runs in-game (tested 1920x1080). Easy mode layout: shop (scaled to fit) | build on top, the
@@ -33,10 +53,9 @@ yet checked in game.
 
 Repo: https://github.com/luccahp1/deadlock-build-editor (public, MIT).
 
-Testing loop: build, copy `dist/pak42_dir.vpk` into `game/citadel/addons`, restart the game
-(mods load at startup only). Launch with `steam.exe -applaunch 1422450 -condebug -dev` so
-`game/citadel/console.log` is written live; the script logs `[EasyBuildEditor] layout: ...`
-with measured sizes when Easy mode turns on.
+Testing loop: see docs/TESTING.md. In short, `npm test` first; in game, `tools/dev.ps1 -Restart`
+(build, install into `game/citadel/addons`, restart with `-condebug -dev -novid`, wait for the
+new build id), then `python tools/gamelog.py --check`. Mods load at startup only.
 
 ## What is known
 

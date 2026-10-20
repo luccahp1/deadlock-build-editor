@@ -61,7 +61,24 @@ dotnet build tools/pancomp -c Release -o tools/bin
 python build.py
 ```
 
-The output is `dist/pak42_dir.vpk`.
+The output is `dist/pak42_dir.vpk`. `python build.py --install` also copies it into the game's
+`addons` folder. Set `DEADLOCK_ROOT` if Deadlock is not in the default Steam folder.
+
+## Testing
+
+Most changes can be tested without starting the game. See [docs/TESTING.md](docs/TESTING.md).
+
+```bash
+npm test     # Node.js 20+, no dependencies
+```
+
+This runs the mod's real script and layout against a fake Panorama runtime and a fake Deadlock
+HUD, and checks every way out of Easy mode (Save, Cancel, Esc, mid-drag, mid-search, ...) for
+leftovers. CI runs it on every push.
+
+For the checks only the game can do, `tools/dev.ps1 -Restart` builds, installs, restarts
+Deadlock and waits for the new build to load. `python tools/gamelog.py --check` then prints the
+mod's console lines and fails on errors.
 
 `tools/pancomp` is a small compiler built on ValveResourceFormat. It compiles Panorama `xml`,
 `css` and `js` sources into the `vxml_c`, `vcss_c` and `vts_c` resources Deadlock loads, using
@@ -74,6 +91,10 @@ the game's own compiled files as templates, and packs them into a VPK.
 | `src/panorama/layout/citadel_shop_mods_build.xml` | The game's build panel layout plus the Easy Editor button, toolbar and footer |
 | `src/panorama/styles/easy_build_editor.css` | Styles for the added UI |
 | `src/panorama/scripts/easy_build_editor.js` | Layout, free placement, right-click menu, search |
+| `tests/` | Offline tests: fake Panorama runtime and fake game in `tests/harness/` |
+| `docs/TESTING.md` | Test workflow, research on avoiding restarts, exit-path audit |
+| `tools/dev.ps1` | Build, install, restart the game, wait for the new build |
+| `tools/gamelog.py` | Mod lines and errors from the game's `console.log` |
 | `tools/pancomp` | Panorama compiler and VPK packer |
 | `tools/vpkread.py` | Minimal VPK reader and extractor |
 | `tools/blocks.py` | Resource block inspector |
@@ -93,8 +114,9 @@ tools/s2v/Source2Viewer-CLI.exe -i _ref/panorama/layout/citadel_shop_mods_build.
 ## Troubleshooting
 
 Launch with `-condebug` to write the game console to `game/citadel/console.log`. The mod logs
-lines prefixed with `[EasyBuildEditor]`, including the measured layout and how many shop cards
-loaded when Easy mode turns on.
+lines prefixed with `[EasyBuildEditor]`: the build it loaded (`loaded build <id>`), the measured
+layout and how many shop cards loaded when Easy mode turns on, and an `exit check` after every
+exit from Easy mode. `python tools/gamelog.py` prints just those lines and any script errors.
 
 ## License
 

@@ -1,0 +1,8 @@
+{
+  "name": "deadlock-build-editor",
+  "private": true,
+  "description": "Offline tests for the Easy Build Editor Panorama mod. No dependencies; needs Node.js 20+.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
