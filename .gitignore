@@ -15,3 +15,5 @@ build/
 # local tool config
 CLAUDE.md
 .claude/
+__pycache__/
+node_modules/

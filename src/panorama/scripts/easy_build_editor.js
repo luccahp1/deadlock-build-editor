@@ -8,6 +8,9 @@
 
 var EasyBuildEditor = (function () {
     const LOG_PREFIX = "[EasyBuildEditor] ";
+    // build.py replaces this with the git commit and build time, so the
+    // console log shows which build the game actually loaded.
+    const BUILD_ID = "dev";
     const TICK_EDITING = 0.2;
     const TICK_IDLE = 0.5;
     // Full-screen layout: shop | build on top, the game's Edit Build panel as a
@@ -34,6 +37,9 @@ var EasyBuildEditor = (function () {
     const buildPanel = $.GetContextPanel();
     let wanted = false;
     let applied = false;
+    // Bumped every time Easy mode turns on or off, so delayed work started in
+    // one edit session never runs in the next one (or outside edit mode).
+    let session = 0;
     let splitWanted = true;
     let splitApplied = false;
     let tickScheduled = false;
@@ -42,6 +48,44 @@ var EasyBuildEditor = (function () {
 
     function log(message) {
         $.Msg(LOG_PREFIX + message);
+    }
+
+    function logError(where, e) {
+        log(`ERROR in ${where}: ${e}${e && e.stack ? "\n" + e.stack : ""}`);
+    }
+
+    // Runs one step of a multi-step job; a failure is logged and the rest of
+    // the job still runs.
+    function safely(where, fn) {
+        try {
+            return fn();
+        } catch (e) {
+            logError(where, e);
+            return undefined;
+        }
+    }
+
+    function alive(panel) {
+        try {
+            return !!panel && (!panel.IsValid || panel.IsValid());
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Deleting a focused text entry leaves keyboard focus on nothing, which
+    // can swallow the game's own keys until the player clicks somewhere.
+    function dropFocus(panel) {
+        if (!alive(panel)) {
+            return;
+        }
+        try {
+            if (typeof panel.BHasKeyFocus !== "function" || panel.BHasKeyFocus()) {
+                $.DispatchEvent("DropInputFocus", panel);
+            }
+        } catch (e) {
+            logError("dropFocus", e);
+        }
     }
 
     function find(id) {
@@ -109,17 +153,42 @@ var EasyBuildEditor = (function () {
     // ---- full-screen layout: edit sidebar | shop | build ----
 
     // Every inline style we set is recorded so turning Easy mode off can hand
-    // the panels back to the game's own CSS.
+    // the panels back to the game's own CSS. Styles belong to a group: "split"
+    // is the shop | build layout (undone by Hide shop), "easy" is the rest.
     const touched = [];
 
-    function setStyle(panel, prop, value) {
+    function setStyle(panel, prop, value, group) {
         if (!panel) {
             return;
         }
+        group = group || "split";
         if (!touched.some(t => t.panel === panel && t.prop === prop)) {
-            touched.push({ panel: panel, prop: prop });
+            touched.push({ panel: panel, prop: prop, group: group });
         }
         panel.style[prop] = value;
+    }
+
+    // Panel properties that are not styles (visible, hittest): the game's own
+    // value is kept and put back on exit.
+    const changedProps = [];
+
+    function setProp(panel, prop, value) {
+        if (!panel) {
+            return;
+        }
+        if (!changedProps.some(t => t.panel === panel && t.prop === prop)) {
+            changedProps.push({ panel: panel, prop: prop, original: panel[prop] });
+        }
+        panel[prop] = value;
+    }
+
+    function restoreProps() {
+        for (const t of changedProps) {
+            if (alive(t.panel)) {
+                safely(`restore ${t.prop}`, () => { t.panel[t.prop] = t.original; });
+            }
+        }
+        changedProps.length = 0;
     }
 
     // camelCase style names are aliases in Panorama and cannot be unset; the
@@ -141,10 +210,16 @@ var EasyBuildEditor = (function () {
         panel.style[BASE_STYLE[prop] || prop.replace(/[A-Z]/g, m => "-" + m.toLowerCase())] = null;
     }
 
-    function restoreStyles() {
+    // Restores one group, or every group when none is given.
+    function restoreStyles(group) {
+        const keep = [];
         for (const t of touched) {
+            if (group && t.group !== group) {
+                keep.push(t);
+                continue;
+            }
             try {
-                if (t.panel.IsValid && !t.panel.IsValid()) {
+                if (!alive(t.panel)) {
                     continue;
                 }
                 clearStyle(t.panel, t.prop);
@@ -153,6 +228,7 @@ var EasyBuildEditor = (function () {
             }
         }
         touched.length = 0;
+        touched.push(...keep);
     }
 
     function ancestorById(id) {
@@ -258,6 +334,13 @@ var EasyBuildEditor = (function () {
         }
     }
 
+    // Hide shop: the game hides the build panel while another tab is
+    // selected, so the build tab has to be selected for the build to show.
+    function showBuildTabOnly() {
+        selectedAllItems = true; // leaving Easy mode still selects Build
+        activate("EasyTabBuild");
+    }
+
     // A card the game has filled in carries its item category class.
     function cardStats(panel) {
         const cards = modIcons(panel);
@@ -283,7 +366,8 @@ var EasyBuildEditor = (function () {
 
     function applySplit(on) {
         if (!on) {
-            restoreStyles();
+            restoreStyles("split");
+            restoreProps();
             splitApplied = false;
             updateSplitLabel();
             return;
@@ -319,9 +403,7 @@ var EasyBuildEditor = (function () {
         // All Items is taller than the space left above the edit strip.
         setStyle(shop, "overflow", "clip scroll");
         setStyle(shop, "zIndex", "0");
-        if (shop) {
-            shop.visible = true;
-        }
+        setProp(shop, "visible", true);
 
         const buildWidth = listsWidth - shopWidth - GAP;
         setStyle(buildPanel, "width", `${Math.floor(buildWidth / BUILD_SCALE)}px`);
@@ -331,7 +413,7 @@ var EasyBuildEditor = (function () {
         setStyle(buildPanel, "transform", "none");
         // Above the shop, so drops onto a section reach the section.
         setStyle(buildPanel, "zIndex", "20");
-        buildPanel.visible = true;
+        setProp(buildPanel, "visible", true);
 
         if (!splitApplied) {
             $.Schedule(0.5, () => logLayout(shop));
@@ -357,7 +439,7 @@ var EasyBuildEditor = (function () {
         }
         const scale = toolbar.actualuiscale_y || 1;
         const bottom = Math.ceil((toolbar.actualyoffset + toolbar.actuallayoutheight) / scale);
-        setStyle(container, "marginTop", `${bottom + 6}px`);
+        setStyle(container, "marginTop", `${bottom + 6}px`, "easy");
     }
 
     // ---- per-category tidy up ----
@@ -452,6 +534,9 @@ var EasyBuildEditor = (function () {
     }
 
     function queueSection(name) {
+        if (!applied) {
+            return; // the toolbar is only shown in Easy mode
+        }
         const job = { name: name, previousCount: categories().length, tries: 0 };
         pendingNames.push(job);
         if (pendingNames.length === 1) {
@@ -514,6 +599,14 @@ var EasyBuildEditor = (function () {
 
     // Tries methods from `start` until the item count moves by `wantDelta`.
     function tryMethods(methods, start, icon, target, countOf, wantDelta, done) {
+        // Easy mode ended (Save, Cancel, Esc) while probing: stop. Outside
+        // edit mode a replayed click on a shop item could buy it.
+        const probeSession = session;
+        if (!applied || !alive(icon) || !alive(target)) {
+            log("right-click: stopped, Easy mode ended or the item is gone");
+            done(-1);
+            return;
+        }
         if (start >= methods.length) {
             setStatus("Right-click could not change the build, drag instead");
             log("right-click: no method worked");
@@ -527,6 +620,11 @@ var EasyBuildEditor = (function () {
             log(`right-click: ${methods[start].name} threw ${e}`);
         }
         $.Schedule(PROBE_SETTLE, () => {
+            if (probeSession !== session || !applied) {
+                log("right-click: stopped, Easy mode ended");
+                done(-1);
+                return;
+            }
             if (countOf() - before === wantDelta) {
                 log(`right-click: ${methods[start].name} works`);
                 done(start);
@@ -557,8 +655,12 @@ var EasyBuildEditor = (function () {
             $.Schedule(PROBE_SETTLE, () => finish(itemCount(category) > before));
             return;
         }
+        const probeSession = session;
         tryMethods(ADD_METHODS, 0, icon, category, () => itemCount(category), 1, found => {
-            addMethod = found;
+            // An aborted probe proves nothing about the methods.
+            if (probeSession === session) {
+                addMethod = found;
+            }
             finish(found >= 0);
         });
     }
@@ -572,7 +674,12 @@ var EasyBuildEditor = (function () {
             REMOVE_METHODS[removeMethod].run(icon, category);
             return;
         }
-        tryMethods(REMOVE_METHODS, 0, icon, category, () => itemCount(category), -1, found => { removeMethod = found; });
+        const probeSession = session;
+        tryMethods(REMOVE_METHODS, 0, icon, category, () => itemCount(category), -1, found => {
+            if (probeSession === session) {
+                removeMethod = found;
+            }
+        });
     }
 
     // Icons are recreated by the game, so new ones are hooked every tick. The
@@ -663,8 +770,12 @@ var EasyBuildEditor = (function () {
         grip.SetDraggable(true);
 
         $.RegisterEventHandler("DragStart", grip, (panelId, drag) => {
+            if (!applied) {
+                return false;
+            }
             const scale = unitsOf(category);
-            const ghost = $.CreatePanel("Panel", buildPanel, "EasyDragGhost");
+            const ghost = $.CreatePanel("Panel", buildPanel, GHOST_ID);
+            drags.push({ ghost: ghost, category: category });
             ghost.style.width = `${Math.round(category.actuallayoutwidth / scale)}px`;
             ghost.style.height = `${Math.round(category.actuallayoutheight / scale)}px`;
             ghost.style.backgroundColor = "#3fb37f40";
@@ -679,9 +790,11 @@ var EasyBuildEditor = (function () {
         });
 
         $.RegisterEventHandler("DragEnd", grip, (panelId, ghost) => {
-            clearStyle(category, "opacity");
+            endDrag(category, ghost);
             const container = find("CategoryContainer");
-            if (ghost && container) {
+            // Easy mode may have ended mid-drag (Save, Cancel, Esc): placing
+            // the section now would leave it floating in the game's layout.
+            if (applied && alive(ghost) && alive(category) && container) {
                 const ghostPos = ghost.GetPositionWithinWindow();
                 const boxPos = container.GetPositionWithinWindow();
                 const scale = unitsOf(container);
@@ -694,11 +807,39 @@ var EasyBuildEditor = (function () {
                 rememberPosition(categories(), category, pos);
                 placeSection(category, pos);
             }
-            if (ghost) {
+            if (alive(ghost)) {
                 ghost.DeleteAsync(0);
             }
             return true;
         });
+    }
+
+    // Drags in progress, so leaving Easy mode mid-drag can clean up.
+    const GHOST_ID = "EasyDragGhost";
+    let drags = [];
+
+    function endDrag(category, ghost) {
+        drags = drags.filter(d => d.category !== category && d.ghost !== ghost);
+        if (alive(category)) {
+            clearStyle(category, "opacity");
+        }
+    }
+
+    function cancelDrags() {
+        for (const drag of drags) {
+            if (alive(drag.category)) {
+                safely("cancel drag", () => clearStyle(drag.category, "opacity"));
+            }
+            if (alive(drag.ghost)) {
+                drag.ghost.DeleteAsync(0);
+            }
+        }
+        drags = [];
+        // A ghost the drag code never handed back.
+        const stray = buildPanel.FindChildTraverse(GHOST_ID);
+        if (stray) {
+            stray.DeleteAsync(0);
+        }
     }
 
     function freeLayout(list) {
@@ -706,7 +847,7 @@ var EasyBuildEditor = (function () {
         if (!container) {
             return;
         }
-        setStyle(container, "flowChildren", "none");
+        setStyle(container, "flowChildren", "none", "easy");
 
         // Sections without a position go below everything already placed.
         let nextY = 0;
@@ -763,8 +904,13 @@ var EasyBuildEditor = (function () {
     const CELL = 32;
     const MAX_RESULTS = 8;
     const SPAWN_TIMEOUT = 5; // seconds to wait for a section made from the menu
+    const MENU_WIDTH = 220;      // keep in step with #EasyContextMenu in the CSS
+    const SEARCH_WIDTH = 300;    // #EasyContextMenu.Search
     let spawnAt = null;   // where the next new section goes
     let menuAt = null;
+    // Held directly: a menu being replaced is still found by id until its
+    // async delete runs, so looking it up by id can pick the old one.
+    let menuPanel = null;
     let gridSize = "";
 
     function hitGrid() {
@@ -839,28 +985,34 @@ var EasyBuildEditor = (function () {
         return button;
     }
 
-    function closeMenu() {
-        const container = find("CategoryContainer");
-        const menu = container ? container.FindChild(MENU_ID) : null;
-        if (menu) {
-            menu.DeleteAsync(0);
+    function deleteMenu() {
+        if (alive(menuPanel)) {
+            dropFocus(menuPanel.FindChildTraverse("EasySearchEntry"));
+            menuPanel.DeleteAsync(0);
         }
+        menuPanel = null;
+    }
+
+    function closeMenu() {
+        deleteMenu();
         menuAt = null;
         clearShopFilter();
     }
 
-    function newMenu(at) {
+    function newMenu(at, width) {
         const container = find("CategoryContainer");
         if (!container) {
             return null;
         }
-        const old = container.FindChild(MENU_ID);
-        if (old) {
-            old.DeleteAsync(0);
-        }
+        deleteMenu();
         menuAt = at;
         const menu = $.CreatePanel("Panel", container, MENU_ID);
-        menu.style.x = `${Math.round(at.x)}px`;
+        menuPanel = menu;
+        // Open to the left of the click when the menu would run off the right
+        // edge of the build area.
+        const room = container.actuallayoutwidth / unitsOf(container);
+        const x = at.x + width > room ? Math.max(0, room - width - 4) : at.x;
+        menu.style.x = `${Math.round(x)}px`;
         menu.style.y = `${Math.round(at.y)}px`;
         return menu;
     }
@@ -870,7 +1022,7 @@ var EasyBuildEditor = (function () {
             return;
         }
         clearShopFilter();
-        const menu = newMenu(at);
+        const menu = newMenu(at, MENU_WIDTH);
         if (!menu) {
             return;
         }
@@ -949,17 +1101,18 @@ var EasyBuildEditor = (function () {
 
     function clearShopFilter() {
         for (const card of filtered) {
-            try {
-                card.style.opacity = null;
-            } catch (e) {
-                // card was recreated by the game
+            if (alive(card)) {
+                safely("clear filter", () => { card.style.opacity = null; });
             }
         }
         filtered = [];
     }
 
     function openSearch(at) {
-        const menu = newMenu(at);
+        if (!applied) {
+            return;
+        }
+        const menu = newMenu(at, SEARCH_WIDTH);
         if (!menu) {
             return;
         }
@@ -993,7 +1146,12 @@ var EasyBuildEditor = (function () {
         });
         entry.SetPanelEvent("oncancel", closeMenu);
         menuButton(menu, "Close", closeMenu, "Close");
-        $.Schedule(0.05, () => entry.SetFocus());
+        // The menu may be gone by then (Esc, Save, a click elsewhere).
+        $.Schedule(0.05, () => {
+            if (menuPanel === menu && alive(entry)) {
+                entry.SetFocus();
+            }
+        });
     }
 
     function pickResult(match) {
@@ -1013,38 +1171,114 @@ var EasyBuildEditor = (function () {
 
     // ---- main loop ----
 
+    // Set once any ancestor has been seen with gShopOpen; after that, its
+    // absence means the shop was closed (Esc). Never seen: assume open.
+    let shopClassSeen = false;
+
+    function shopOpen() {
+        if (hasShopClass("gShopOpen")) {
+            shopClassSeen = true;
+            return true;
+        }
+        return !shopClassSeen;
+    }
+
     function apply(on) {
         if (on === applied) {
             return;
         }
         applied = on;
+        session++;
         buildPanel.SetHasClass("EasyEdit", on);
-        applySplit(on && splitWanted);
-        for (const category of categories()) {
-            tidyCategory(category, on);
-        }
         if (on) {
-            selectAllItemsTab();
-        } else {
-            closeMenu();
-            removeHitGrid();
-            clearFreeLayout();
-            restoreBuildTab();
+            applySplit(splitWanted);
+            for (const category of categories()) {
+                tidyCategory(category, true);
+            }
+            if (splitWanted) {
+                selectAllItemsTab();
+            }
+            log("easy mode on");
+            return;
         }
-        log(on ? "easy mode on" : "easy mode off");
+
+        // Every way out of edit mode (Easy Editor button, Save, Cancel, Esc,
+        // the game's own buttons) lands here. Each step runs even if an
+        // earlier one fails, so nothing is left on screen.
+        safely("close menu", closeMenu);
+        safely("cancel drags", cancelDrags);
+        pendingNames = [];
+        spawnAt = null;
+        safely("restore split", () => applySplit(false));
+        safely("restore styles", () => restoreStyles());
+        for (const category of categories()) {
+            safely("untidy section", () => tidyCategory(category, false));
+        }
+        safely("remove hit grid", removeHitGrid);
+        safely("clear free layout", clearFreeLayout);
+        safely("restore tab", restoreBuildTab);
+        for (const panel of Array.from(panelPositions.keys())) {
+            if (!alive(panel)) {
+                panelPositions.delete(panel);
+            }
+        }
+        log("easy mode off");
+        const exitSession = session;
+        $.Schedule(0.3, () => safely("exit check", () => exitCheck(exitSession)));
     }
 
-    function tick() {
-        tickScheduled = false;
+    // Logged after every exit so a console.log read shows whether anything
+    // the mod made is still around.
+    function exitCheck(exitSession) {
+        if (exitSession !== session || applied) {
+            return;
+        }
+        const left = [];
+        for (const id of [MENU_ID, HIT_GRID_ID, GHOST_ID, GRIP_ID]) {
+            if (buildPanel.FindChildTraverse(id)) {
+                left.push(`#${id}`);
+            }
+        }
+        const counts = {
+            "dimmed shop items": filtered.length,
+            "queued sections": pendingNames.length,
+            "inline styles": touched.length,
+            "panel props": changedProps.length,
+            "drags": drags.length,
+        };
+        for (const name in counts) {
+            if (counts[name] > 0) {
+                left.push(`${counts[name]} ${name}`);
+            }
+        }
+        if (menuAt || menuPanel) {
+            left.push("menu state");
+        }
+        if (spawnAt) {
+            left.push("spawn point");
+        }
+        log(left.length ? `exit check: LEFTOVER ${left.join(", ")}` : "exit check: clean");
+    }
+
+    // One pass of the loop. Returns false once the loop can stop.
+    function update() {
+        if (!alive(buildPanel)) {
+            return false;
+        }
         if (!wanted) {
             apply(false);
-            return;
+            return false;
         }
 
         const editing = isEditing();
         apply(editing);
 
         if (editing) {
+            // Esc closed the shop, or the game rebuilt the section list and
+            // took the menu with it: drop the menu, its focus and the dimming.
+            if ((menuAt || menuPanel) && (!shopOpen() || !alive(menuPanel))) {
+                closeMenu();
+            }
             const list = categories();
             for (const category of list) {
                 tidyCategory(category, true);
@@ -1053,18 +1287,33 @@ var EasyBuildEditor = (function () {
                 // The game hides whichever tab is not selected; keep both up.
                 applySplit(true);
             }
-            placeCategories();
-            freeLayout(list);
-            sizeHitGrid(list);
-            hookIcons();
-            refreshSelection(list);
-            processPendingNames();
+            safely("place sections", placeCategories);
+            safely("free layout", () => freeLayout(list));
+            safely("hit grid", () => sizeHitGrid(list));
+            safely("hook icons", hookIcons);
+            safely("selection", () => refreshSelection(list));
+            safely("pending names", processPendingNames);
             setStatus(`${list.length} section${list.length === 1 ? "" : "s"}, ${totalItems(list)} items`);
         }
-
-        schedule(editing ? TICK_EDITING : TICK_IDLE);
+        return true;
     }
 
+    function tick() {
+        tickScheduled = false;
+        let keepGoing = true;
+        try {
+            keepGoing = update();
+        } catch (e) {
+            // A thrown tick must not end the loop, or Easy mode freezes in
+            // whatever state it was in.
+            logError("tick", e);
+        }
+        if (keepGoing) {
+            schedule(applied ? TICK_EDITING : TICK_IDLE);
+        }
+    }
+
+    // Only one tick is ever pending, however often the buttons are pressed.
     function schedule(delay) {
         if (!tickScheduled) {
             tickScheduled = true;
@@ -1113,32 +1362,50 @@ var EasyBuildEditor = (function () {
         }
     }
 
+    log(`loaded build ${BUILD_ID}`);
+
     // ---- public, called from the layout ----
 
     return {
         Toggle() {
             wanted = !wanted;
-            dumpOnce();
+            safely("dump", dumpOnce);
             if (wanted) {
                 dispatch("CitadelHudHeroBuildsCompactCategory", -1);
             }
-            tick();
+            try {
+                if (update()) {
+                    schedule(applied ? TICK_EDITING : TICK_IDLE);
+                }
+            } catch (e) {
+                logError("Toggle", e);
+                schedule(TICK_EDITING);
+            }
         },
         ToggleSplit() {
-            splitWanted = !splitWanted;
-            applySplit(false);
-            applySplit(splitWanted && applied);
-            for (const category of categories()) {
-                tidyCategory(category, applied);
-            }
+            safely("ToggleSplit", () => {
+                splitWanted = !splitWanted;
+                if (applied) {
+                    applySplit(false);
+                    if (splitWanted) {
+                        applySplit(true);
+                        selectAllItemsTab();
+                    } else {
+                        showBuildTabOnly();
+                    }
+                }
+                updateSplitLabel();
+            });
         },
         AddSection(name) {
-            queueSection(name);
+            safely("AddSection", () => queueSection(name));
         },
         AddStarterTemplate() {
-            for (const name of STARTER_SECTIONS) {
-                queueSection(name);
-            }
+            safely("AddStarterTemplate", () => {
+                for (const name of STARTER_SECTIONS) {
+                    queueSection(name);
+                }
+            });
         },
     };
 })();

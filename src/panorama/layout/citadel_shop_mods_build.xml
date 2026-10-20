@@ -72,9 +72,10 @@
 				<Button class="EasyChip" onactivate="EasyBuildEditor.ToggleSplit()"><Label id="EasySplitLabel" text="Hide shop" /></Button>
 			</Panel>
 			<Label class="EasyHint" text="Select a section, then drag items from the shop onto it. Right-click empty space to create a category or search for an item." />
-			<Button id="EasyTabAllItems" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_AllItems )" />
-			<Button id="EasyTabBuild" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_Build )" />
 		</Panel>
+		<!-- Invisible tab switches the script presses. Kept outside the toolbar so they work while the toolbar is collapsed (leaving Easy mode). -->
+		<Button id="EasyTabAllItems" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_AllItems )" />
+		<Button id="EasyTabBuild" class="EasyTrigger" onactivate="CitadelSelectShopTab( EShopTab_Build )" />
 		<Panel id="EasyFooter" hittest="true">
 			<Button class="EasyFooterButton Save" onmouseactivate="CitadelHudHeroBuildsSaveEdits()"><Label text="SAVE BUILD" /></Button>
 			<Button class="EasyFooterButton Cancel" onmouseactivate="CitadelHudHeroBuildsDiscardEdits()"><Label text="CANCEL" /></Button>
